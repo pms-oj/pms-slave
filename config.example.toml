@@ -1,0 +1,4 @@
+master = "astar.moe:3030"
+isolate_flag = "-t 1 -w 5 --meta=test.log --dir=box=/work"
+master_pass = "asdf"
+isolate_work_dir = "/work"
