@@ -153,8 +153,6 @@ pub async fn open_protocol() {
                             .handle_command(stream_mutex.lock().await.by_ref(), packet)
                             .await
                     });
-                } else {
-                    error!("Wrong packet as received");
                 }
             }
             drop(state);
