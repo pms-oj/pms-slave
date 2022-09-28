@@ -4,7 +4,7 @@ pub struct StdoutLogger;
 
 impl Log for StdoutLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= Level::Info
+        metadata.level() <= Level::max()
     }
 
     fn log(&self, record: &Record) {

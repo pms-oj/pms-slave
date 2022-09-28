@@ -24,6 +24,12 @@ lazy_static! {
         toml::from_str(&s).expect("Some error occured")
     };
     static ref LANGUAGES: Languages = Languages::load().expect("Some error occured");
+    static ref MASTER_PASS: Vec<u8> = {
+        use sha3::{Digest, Sha3_256};
+        let mut hasher = Sha3_256::new();
+        hasher.update(CONFIG.master_pass.clone());
+        hasher.finalize().to_vec()
+    };
 }
 
 static LOGGER: logger::StdoutLogger = logger::StdoutLogger;
