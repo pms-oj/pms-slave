@@ -139,7 +139,7 @@ pub async fn open_protocol() {
             drop(recv);
         } else {
             error!("Cannot connect to server. Trying to connect in 5 secs ...");
-            sleep(Duration::from_secs(5));
+            sleep(Duration::from_secs(5)).await;
         }
     }
 }
