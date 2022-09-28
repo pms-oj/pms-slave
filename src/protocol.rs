@@ -1,24 +1,25 @@
 use async_std::net::TcpStream;
 use async_std::prelude::*;
-use async_std::task::{spawn};
+use async_std::task::spawn;
 
 use bincode::Options;
 
-use judge_protocol::packet::*;
 use judge_protocol::handshake::*;
+use judge_protocol::packet::*;
 use k256::ecdh::EphemeralSecret;
 use k256::ecdh::SharedSecret;
 use k256::PublicKey;
 use rand::thread_rng;
-use std::fs::read_to_string;
+use async_std::task::sleep;
 
-use async_std::channel::{Sender, Receiver, unbounded};
+use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::sync::*;
 
 use std::pin::Pin;
+use std::time::Duration;
 
-use log::{debug, info};
 use crate::{CONFIG, LANGUAGES};
+use log::{debug, info, error};
 
 #[derive(Clone, Copy, Debug)]
 enum Actions {
@@ -42,7 +43,7 @@ impl State {
         let packet = Packet::make_packet(Command::VerifyToken, body.bytes());
         packet.send(Pin::new(&mut stream)).await
     }
-    
+
     async fn handle_command(&mut self, stream: &mut TcpStream, packet: Packet) {
         match packet.heady.header.command {
             Command::Handshake => {
@@ -52,27 +53,29 @@ impl State {
                     .deserialize::<HandshakeResult>(&packet.heady.body)
                 {
                     self.node_id = Mutex::new(res.node_id);
-                    self.shared =
-                        Arc::new(Mutex::new(Some(self.key.diffie_hellman(&res.server_pubkey))));
+                    self.shared = Arc::new(Mutex::new(Some(
+                        self.key.diffie_hellman(&res.server_pubkey),
+                    )));
                 } else {
-                    debug!("[PMS-slave] An error occurred");
+                    debug!("An error occurred");
                 }
-            },
+            }
             Command::ReqVerifyToken => {
                 if let Ok(state) = bincode::DefaultOptions::new()
-                .with_big_endian()
-                .with_fixint_encoding()
-                .deserialize::<bool>(&packet.heady.body) {
+                    .with_big_endian()
+                    .with_fixint_encoding()
+                    .deserialize::<bool>(&packet.heady.body)
+                {
                     if !state {
-                        debug!("[PMS-slave] Session was expired. Trying to reconnect ...");
+                        debug!("Session was expired. Trying to reconnect ...");
                         self.signal.lock().await.send(Actions::Reconnect).await;
                     }
                 } else {
-                    debug!("[PMS-slave] An error occurred");
+                    debug!("An error occurred");
                 }
-            },
+            }
             _ => {
-                debug!("[PMS-slave] An unknown command has received");
+                debug!("An unknown command has received");
                 // Unknown
             }
         }
@@ -101,13 +104,16 @@ pub async fn open_protocol() {
                     .serialize(&state.lock().await.key.public_key())
                     .unwrap(),
             );
-            Handshake.send(Pin::new(stream.lock().await.by_ref())).await.ok();
+            Handshake
+                .send(Pin::new(stream.lock().await.by_ref()))
+                .await
+                .ok();
             loop {
                 if let Ok(actions) = recv.try_recv() {
                     match actions {
                         Actions::Reconnect => {
                             break;
-                        },
+                        }
                         _ => {}
                     }
                 }
@@ -131,6 +137,9 @@ pub async fn open_protocol() {
             }
             drop(state);
             drop(recv);
+        } else {
+            error!("Cannot connect to server. Trying to connect in 5 secs ...");
+            sleep(Duration::from_secs(5));
         }
     }
 }
