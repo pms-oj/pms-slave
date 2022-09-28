@@ -5,12 +5,13 @@ mod config;
 mod container;
 mod language;
 mod protocol;
+mod logger;
 
 pub const CONFIG_FILE: &'static str = "config.toml";
 
 use std::fs::read_to_string;
 
-use log::{debug, info};
+use log::*;
 
 use config::Config;
 use language::Languages;
@@ -25,8 +26,11 @@ lazy_static! {
     static ref LANGUAGES: Languages = Languages::load().expect("Some error occured");
 }
 
+static LOGGER: logger::StdoutLogger = logger::StdoutLogger;
+
 #[async_std::main]
 async fn main() {
-    info!("");
+    log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Info));
+    info!("pms-slave {}", env!("CARGO_PKG_VERSION"));
     open_protocol().await
 }
