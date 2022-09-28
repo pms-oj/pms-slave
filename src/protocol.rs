@@ -96,7 +96,7 @@ pub async fn open_protocol() {
                 signal: Arc::new(Mutex::new(send)),
             }));
             // Send Handshake packet
-            let Handshake = Packet::make_packet(
+            let handshake = Packet::make_packet(
                 Command::Handshake,
                 bincode::DefaultOptions::new()
                     .with_big_endian()
@@ -104,7 +104,7 @@ pub async fn open_protocol() {
                     .serialize(&state.lock().await.key.public_key())
                     .unwrap(),
             );
-            Handshake
+            handshake
                 .send(Pin::new(stream.lock().await.by_ref()))
                 .await
                 .ok();
