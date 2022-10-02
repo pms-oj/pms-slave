@@ -2,10 +2,12 @@
 extern crate lazy_static;
 
 mod config;
+mod constants;
 mod container;
+mod judge;
 mod language;
-mod protocol;
 mod logger;
+mod protocol;
 
 pub const CONFIG_FILE: &'static str = "config.toml";
 

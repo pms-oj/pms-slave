@@ -1,4 +1,4 @@
-use log::{Record, Level, Metadata, Log};
+use log::{Level, Log, Metadata, Record};
 
 pub struct StdoutLogger;
 

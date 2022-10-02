@@ -4,13 +4,15 @@ use async_std::task::spawn;
 
 use bincode::Options;
 
+use async_std::task::sleep;
 use judge_protocol::handshake::*;
+use judge_protocol::judge::*;
 use judge_protocol::packet::*;
+use judge_protocol::security::*;
 use k256::ecdh::EphemeralSecret;
 use k256::ecdh::SharedSecret;
 use k256::PublicKey;
 use rand::thread_rng;
-use async_std::task::sleep;
 
 use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::sync::*;
@@ -18,12 +20,14 @@ use async_std::sync::*;
 use std::pin::Pin;
 use std::time::Duration;
 
+use crate::constants::SLEEP_TIME;
+use crate::judge::*;
 use crate::{CONFIG, LANGUAGES, MASTER_PASS};
-use log::{debug, info, error};
+use log::{debug, error, info};
 
 #[derive(Clone, Copy, Debug)]
 enum Actions {
-    Reconnect,
+    Reconnect(u64),
     Shutdown,
     Unknown,
 }
@@ -57,18 +61,31 @@ impl State {
                     match res.result {
                         HandshakeResult::Success => {
                             self.node_id = Mutex::new(res.node_id.unwrap());
+                            let shared_key = self.key.diffie_hellman(&res.server_pubkey.unwrap());
+
                             self.shared = Arc::new(Mutex::new(Some(
                                 self.key.diffie_hellman(&res.server_pubkey.unwrap()),
                             )));
+                            info!(
+                                "Handshake was established from remote {:?}",
+                                stream.peer_addr()
+                            );
                         }
                         HandshakeResult::PasswordNotMatched => {
                             error!("Master password is not matched. Trying to shutdown ...");
                             self.signal.lock().await.send(Actions::Shutdown).await;
                         }
-                        _ => { error!("Unknown detected"); }
+                        _ => {
+                            error!("Unknown detected");
+                        }
                     }
                 } else {
-                    error!("An error occurred");
+                    error!("An error occurred on processing Command::Handshake. Trying to reconnect in {} secs ...", SLEEP_TIME);
+                    self.signal
+                        .lock()
+                        .await
+                        .send(Actions::Reconnect(SLEEP_TIME))
+                        .await;
                 }
             }
             Command::ReqVerifyToken => {
@@ -79,12 +96,49 @@ impl State {
                 {
                     if !state {
                         info!("Session was expired. Trying to reconnect ...");
-                        self.signal.lock().await.send(Actions::Reconnect).await;
+                        self.signal.lock().await.send(Actions::Reconnect(0)).await;
                     } else {
                         info!("Command::VerifyToken was succeed");
                     }
                 } else {
-                    error!("An error occurred");
+                    error!("An error occurred on processing Command::ReqVerifyToken. Trying to reconnect in {} secs ...", SLEEP_TIME);
+                    self.signal
+                        .lock()
+                        .await
+                        .send(Actions::Reconnect(SLEEP_TIME))
+                        .await;
+                }
+            }
+            Command::GetJudge => {
+                if let Ok(judge_req) = bincode::DefaultOptions::new()
+                    .with_big_endian()
+                    .with_fixint_encoding()
+                    .deserialize::<JudgeRequestBody>(&packet.heady.body)
+                {
+                    if let Some(checker_lang) = LANGUAGES.get(judge_req.checker_lang.clone()) {
+                        if let Some(main_lang) = LANGUAGES.get(judge_req.main_lang.clone()) {
+                            if let Some(shared_key) = self.shared.lock().await.as_ref() {
+                                let key = expand_key(shared_key);
+                                let checker_code = judge_req.checker_code.decrypt(&key);
+                                let main_code = judge_req.main_code.decrypt(&key);
+                            } else {
+                                error!("Command::Handshake must be satisfied first");
+                                update_judge(stream, JudgeState::InternalError);
+                            }
+                        } else {
+                            error!(
+                                "Unable to get main code language {}",
+                                judge_req.main_lang.clone()
+                            );
+                        }
+                        update_judge(stream, JudgeState::LanguageNotFound).await;
+                    } else {
+                        error!(
+                            "Unable to get checker code language {}",
+                            judge_req.checker_lang.clone()
+                        );
+                        update_judge(stream, JudgeState::LanguageNotFound).await;
+                    }
                 }
             }
             _ => {
@@ -111,7 +165,7 @@ pub async fn open_protocol() {
             }));
             let handshake_req = HandshakeRequest {
                 client_pubkey: state.lock().await.key.public_key(),
-                pass: CONFIG.master_pass.clone(),
+                pass: MASTER_PASS.clone(),
             };
             // Send Handshake packet
             let handshake = Packet::make_packet(
@@ -129,7 +183,8 @@ pub async fn open_protocol() {
             loop {
                 if let Ok(actions) = recv.try_recv() {
                     match actions {
-                        Actions::Reconnect => {
+                        Actions::Reconnect(secs) => {
+                            sleep(Duration::from_secs(secs)).await;
                             break;
                         }
                         Actions::Shutdown => {
@@ -158,8 +213,11 @@ pub async fn open_protocol() {
             drop(state);
             drop(recv);
         } else {
-            error!("Cannot connect to server. Trying to connect in 5 secs ...");
-            sleep(Duration::from_secs(5)).await;
+            error!(
+                "Cannot connect to server. Trying to connect in {} secs ...",
+                SLEEP_TIME
+            );
+            sleep(Duration::from_secs(SLEEP_TIME)).await;
         }
         if shutdown {
             info!("Actions::Shutdown was triggered");
