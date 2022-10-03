@@ -1,8 +1,8 @@
 # pms-slave
 
-Just run following commands
+Just run following commands (Example)
 
 ```Bash
 $ docker build . -t pms-slave:local
-$ docker run -it --privileged pms-slave:local -p 3030:3030 -v ./config.toml:/app/config.toml
+$ docker run -v /home/ubuntu/pms-slave/config.toml:/app/config.toml -it --privileged pms-slave:local
 ```

@@ -29,13 +29,13 @@ RUN apt-get update && \
     update-ca-certificates && \
     apt-get install g++ gcc python3 python2 rustc libcap-dev build-essential -y
 
+COPY --from=build /opt/isolate /opt/isolate
+
 WORKDIR /opt/isolate
 RUN make install
 
-WORKDIR /opt/pms-slave
-COPY ./target/release/pms-slave /usr/bin
-COPY ./lang /app
-COPY ./config.example.toml /app/config.toml
-
 WORKDIR /app
+COPY --from=build /opt/pms-slave/target/release/pms-slave /usr/bin
+COPY --from=build /opt/pms-slave/langs /app
+COPY --from=build /opt/pms-slave/config.example.toml /app/config.toml
 CMD pms-slave
