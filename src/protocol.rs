@@ -18,6 +18,7 @@ use tempfile::NamedTempFile;
 use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::sync::*;
 
+use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -162,11 +163,21 @@ impl State {
                                     );
                                     stdin_f.write_all(&stdin).ok();
                                     stdout_origin_f.write_all(&stdout_origin).ok();
+                                    let (stdin_p, stdout_origin_p, stdout_p) = (
+                                        stdin_f.into_temp_path().to_path_buf(),
+                                        stdout_origin_f.into_temp_path().to_path_buf(),
+                                        stdout_f.into_temp_path().to_path_buf(),
+                                    );
+                                    let dir = tempfile::tempdir().unwrap();
+                                    std::fs::copy(
+                                        onjudge.main_binary.clone(),
+                                        dir.path().join(BINARY_NAME),
+                                    );
                                     let run = Run {
-                                        stdin_path: stdin_f.into_temp_path().to_path_buf(),
-                                        stdout_path: stdout_f.into_temp_path().to_path_buf(),
+                                        stdin_path: stdin_p.clone(),
+                                        stdout_path: stdout_p.clone(),
+                                        box_dir: dir.path().to_path_buf(),
                                         language: onjudge.main_lang.clone(),
-                                        binary_path: onjudge.main_binary.clone(),
                                         time_limit: onjudge.time_limit,
                                         mem_limit: onjudge.mem_limit,
                                     };
@@ -182,6 +193,53 @@ impl State {
                                     } else {
                                         // Success
                                         // Let's check stdout by checker
+                                        let dir_checker = tempfile::tempdir().unwrap();
+                                        std::fs::copy(
+                                            onjudge.checker_binary.clone(),
+                                            dir_checker.path().join(CHECKER_NAME),
+                                        );
+                                        std::fs::copy(
+                                            stdin_p,
+                                            dir_checker.path().join(STDIN_FILE_NAME),
+                                        );
+                                        std::fs::copy(
+                                            stdout_p,
+                                            dir_checker.path().join(STDOUT_FILE_NAME),
+                                        );
+                                        std::fs::copy(
+                                            stdout_origin_p,
+                                            dir_checker.path().join(STDOUT_ORIGIN_FILE_NAME),
+                                        );
+                                        let checker = CheckerRun {
+                                            checker_lang: onjudge.checker_lang.clone(),
+                                            box_dir: dir_checker.path().to_path_buf(),
+                                        };
+                                        let res_checker = checker.run();
+                                        if let Some(status_checker) = res_checker.meta.status {
+                                            self.update_judge(
+                                                stream,
+                                                test.uuid,
+                                                JudgeState::WrongAnswer(
+                                                    test.test_uuid,
+                                                    res_checker.meta.time.unwrap() as f64,
+                                                    res_checker.meta.cg_mem.unwrap() as f64,
+                                                ),
+                                            )
+                                            .await
+                                            .ok();
+                                        } else {
+                                            self.update_judge(
+                                                stream,
+                                                test.uuid,
+                                                JudgeState::Accepted(
+                                                    test.test_uuid,
+                                                    res_checker.meta.time.unwrap() as f64,
+                                                    res_checker.meta.cg_mem.unwrap() as f64,
+                                                ),
+                                            )
+                                            .await
+                                            .ok();
+                                        }
                                     }
                                 }
                             } else {
@@ -219,6 +277,8 @@ impl State {
                                     let key = expand_key(shared_key);
                                     let checker_code = judge_req.checker_code.decrypt(&key);
                                     let main_code = judge_req.main_code.decrypt(&key);
+                                    let mut checker_f = NamedTempFile::new().unwrap();
+                                    let mut main_f = NamedTempFile::new().unwrap();
                                     *self.locked.lock().await = true;
                                     self.update_judge(
                                         stream,
@@ -227,14 +287,10 @@ impl State {
                                     )
                                     .await
                                     .ok();
-                                    let c_res = checker_lang.compile(
-                                        checker_code,
-                                        PathBuf::from(join_work_dir(CHECKER_NAME)),
-                                    );
-                                    let m_res = main_lang.compile(
-                                        main_code,
-                                        PathBuf::from(join_work_dir(BINARY_NAME)),
-                                    );
+                                    let c_path = checker_f.into_temp_path().to_path_buf();
+                                    let m_path = main_f.into_temp_path().to_path_buf();
+                                    let c_res = checker_lang.compile(checker_code, c_path.clone());
+                                    let m_res = main_lang.compile(main_code, m_path.clone());
                                     if let CompileResult::Error(stderr) = c_res {
                                         debug!("Unable to compile checker code: {}", stderr);
                                         self.update_judge(
@@ -262,12 +318,8 @@ impl State {
                                                     uuid: judge_req.uuid,
                                                     main_lang: main_lang.clone(),
                                                     checker_lang: checker_lang.clone(),
-                                                    main_binary: PathBuf::from(join_work_dir(
-                                                        BINARY_NAME,
-                                                    )),
-                                                    checker_binary: PathBuf::from(join_work_dir(
-                                                        CHECKER_NAME,
-                                                    )),
+                                                    main_binary: m_path,
+                                                    checker_binary: c_path,
                                                     time_limit: judge_req.time_limit,
                                                     mem_limit: judge_req.mem_limit,
                                                 });

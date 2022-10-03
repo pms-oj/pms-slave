@@ -5,9 +5,57 @@ use std::fs::{read_to_string, File};
 use std::io::prelude::*;
 use std::path::PathBuf;
 use std::process::Command;
+use tempfile::NamedTempFile;
 
 pub fn join_work_dir(file: &str) -> String {
     format!("{}/{}", CONFIG.isolate_work_dir, file)
+}
+
+#[derive(Clone, Debug)]
+pub struct CheckerRun {
+    pub checker_lang: Language,
+    pub box_dir: PathBuf,
+}
+
+impl CheckerRun {
+    pub fn run(&self) -> RunResult {
+        // Clean up
+        let _ = Command::new(ISOLATE)
+            .arg("--cleanup")
+            .output()
+            .expect("Failed to run isolate command");
+        // Init sandbox
+        let _ = Command::new(ISOLATE)
+            .arg("--init")
+            .output()
+            .expect("Failed to run isolate command");
+        // Run
+        let mut log_f = NamedTempFile::new().unwrap();
+        let log_p = log_f.into_temp_path().to_path_buf();
+        let _ = Command::new(ISOLATE)
+            .arg("--run")
+            .arg(&format!("-t {}", CHECKER_TIME_LIMIT))
+            .arg(&format!("-w {}", CHECKER_TIME_LIMIT))
+            .arg(&format!("-m {}", CHECKER_MEM_LIMIT))
+            .arg("-s")
+            .arg(&format!("--meta={}", log_p.clone().display()))
+            .arg(&format!(
+                "{} ./{} ./{} ./{}",
+                self.checker_lang
+                    .parse_exec_cmd(PathBuf::from(format!("./{}", CHECKER_NAME))),
+                STDIN_FILE_NAME,
+                STDOUT_ORIGIN_FILE_NAME,
+                STDOUT_FILE_NAME,
+            ))
+            .arg(&format!("--dir=box={}", self.box_dir.display()))
+            .output()
+            .expect("Failed to run isolate command");
+        let meta = {
+            let s = read_to_string(log_p).expect("Some error occured");
+            parse_meta(s).expect("Some error occured")
+        };
+        RunResult { meta }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -15,7 +63,7 @@ pub struct Run {
     pub stdin_path: PathBuf,
     pub stdout_path: PathBuf,
     pub language: Language,
-    pub binary_path: PathBuf,
+    pub box_dir: PathBuf,
     pub time_limit: f64,
     pub mem_limit: f64,
 }
@@ -33,6 +81,8 @@ impl Run {
             .output()
             .expect("Failed to run isolate command");
         // Run
+        let mut log_f = NamedTempFile::new().unwrap();
+        let log_p = log_f.into_temp_path().to_path_buf();
         let _ = Command::new(ISOLATE)
             .arg("--run")
             .arg(&format!(
@@ -49,19 +99,18 @@ impl Run {
             ))
             .arg("-s")
             .arg("-p 1")
-            .arg(&format!("--stdin=./{}", self.stdin_path.display()))
-            .arg(&format!("--stdout=./{}", self.stdout_path.display()))
-            .arg(&format!("--meta=./{}", LOG_FILE_NAME))
-            .arg(&format!("--dir=box={}", CONFIG.isolate_work_dir))
+            .arg(&format!("--stdin={}", self.stdin_path.display()))
+            .arg(&format!("--stdout={}", self.stdout_path.display()))
+            .arg(&format!("--meta={}", log_p.clone().display(),))
+            .arg(&format!("--dir=box={}", self.box_dir.display()))
             .arg(
                 self.language
-                    .parse_exec_cmd(PathBuf::from(self.binary_path.clone())),
+                    .parse_exec_cmd(PathBuf::from(format!("./{}", BINARY_NAME))),
             )
             .output()
             .expect("Failed to run isolate command");
         let meta = {
-            let s = read_to_string(&format!("{}/{}", CONFIG.isolate_work_dir, LOG_FILE_NAME))
-                .expect("Some error occured");
+            let s = read_to_string(log_p).expect("Some error occured");
             parse_meta(s).expect("Some error occured")
         };
         RunResult { meta }
