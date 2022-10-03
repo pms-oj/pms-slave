@@ -5,6 +5,5 @@ use std::net::SocketAddr;
 pub struct Config {
     pub master: SocketAddr,
     pub master_pass: String,
-    pub isolate_flag: String,
     pub isolate_work_dir: String,
 }
