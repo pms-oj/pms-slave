@@ -1,6 +1,7 @@
+uuid = "aea02f71-ab0d-470e-9d0d-3577ec870e29"
 name = "C++ 20"
 version = "C++ Standard 20"
-exec = ""
-args = ""
+exec_cmd = "./{file}"
+compile_cmd = "g++ -std=c++20 {infile} -o {outfile}"
 add_mem_limit = 0.0
 add_time_limit = 0.0

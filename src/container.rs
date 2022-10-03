@@ -1,25 +1,27 @@
-const ISOLATE: &'static str = "isolate";
-const LOG_FILE_NAME: &'static str = "main.log";
-const STDIN_FILE_NAME: &'static str = "stdin.in";
-const STDOUT_FILE_NAME: &'static str = "stdout.out";
-
+use super::constants::*;
 use super::language::Language;
 use super::CONFIG;
 use std::fs::{read_to_string, File};
 use std::io::prelude::*;
+use std::path::PathBuf;
 use std::process::Command;
+
+pub fn join_work_dir(file: &str) -> String {
+    format!("{}/{}", CONFIG.isolate_work_dir, file)
+}
 
 #[derive(Clone, Debug)]
 pub struct Run {
-    stdin: String,
-    language: Language,
-    binary_path: String,
-    time_limit: f64,
-    mem_limit: f64,
+    pub stdin_path: PathBuf,
+    pub stdout_path: PathBuf,
+    pub language: Language,
+    pub binary_path: PathBuf,
+    pub time_limit: f64,
+    pub mem_limit: f64,
 }
 
 impl Run {
-    fn run(&self) -> RunResult {
+    pub fn run(&self) -> RunResult {
         // Clean up
         let _ = Command::new(ISOLATE)
             .arg("--cleanup")
@@ -30,9 +32,6 @@ impl Run {
             .arg("--init")
             .output()
             .expect("Failed to run isolate command");
-        let mut stdin = File::create(&format!("{}/{}", CONFIG.isolate_work_dir, STDIN_FILE_NAME))
-            .expect("Some error occured");
-        stdin.write_all(self.stdin.clone().as_bytes()).ok();
         // Run
         let _ = Command::new(ISOLATE)
             .arg("--run")
@@ -49,25 +48,23 @@ impl Run {
                 self.mem_limit + self.language.add_mem_limit
             ))
             .arg("-s")
-            .arg(&format!("--stdin=./{}", STDIN_FILE_NAME))
-            .arg(&format!("--stdout=./{}", STDOUT_FILE_NAME))
+            .arg("-p 1")
+            .arg(&format!("--stdin=./{}", self.stdin_path.display()))
+            .arg(&format!("--stdout=./{}", self.stdout_path.display()))
             .arg(&format!("--meta=./{}", LOG_FILE_NAME))
             .arg(&format!("--dir=box={}", CONFIG.isolate_work_dir))
-            .arg(&format!(
-                "{} {} {}",
-                self.language.exec, self.language.args, self.binary_path
-            ))
+            .arg(
+                self.language
+                    .parse_exec_cmd(PathBuf::from(self.binary_path.clone())),
+            )
             .output()
             .expect("Failed to run isolate command");
-        let stdout: String =
-            read_to_string(&format!("{}/{}", CONFIG.isolate_work_dir, STDOUT_FILE_NAME))
-                .expect("Some error occured");
         let meta = {
             let s = read_to_string(&format!("{}/{}", CONFIG.isolate_work_dir, LOG_FILE_NAME))
                 .expect("Some error occured");
             parse_meta(s).expect("Some error occured")
         };
-        RunResult { meta, stdout }
+        RunResult { meta }
     }
 }
 
@@ -82,24 +79,23 @@ pub enum RunStatus {
 
 #[derive(Clone, Debug)]
 pub struct RunMeta {
-    status: Option<RunStatus>,
-    time: Option<f64>,
-    time_wall: Option<f64>,
-    message: Option<String>,
-    max_rss: Option<i32>,
-    killed: Option<i32>,
-    exitsig: Option<i32>,
-    exitcode: Option<i32>,
-    csw_voluntary: Option<i32>,
-    csw_forced: Option<i32>,
-    cg_mem: Option<i32>,
-    cg_oom_killed: Option<i32>,
+    pub status: Option<RunStatus>,
+    pub time: Option<f64>,
+    pub time_wall: Option<f64>,
+    pub message: Option<String>,
+    pub max_rss: Option<i32>,
+    pub killed: Option<i32>,
+    pub exitsig: Option<i32>,
+    pub exitcode: Option<i32>,
+    pub csw_voluntary: Option<i32>,
+    pub csw_forced: Option<i32>,
+    pub cg_mem: Option<i32>,
+    pub cg_oom_killed: Option<i32>,
 }
 
 #[derive(Clone, Debug)]
 pub struct RunResult {
-    meta: RunMeta,
-    stdout: String,
+    pub meta: RunMeta,
 }
 
 pub fn parse_meta(s: String) -> Option<RunMeta> {

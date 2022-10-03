@@ -2,6 +2,8 @@
 name = "pms-slave"
 version = "0.1.0"
 edition = "2021"
+license = "GPL-3.0"
+license-file = "LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -17,4 +19,15 @@ k256 = { version = "0.11.5", features = ["default", "ecdh", "serde"] }
 rand = "0.8.5"
 sha3 = "0.10.5"
 generic-array = { version = "0.14", default-features = false }
+tinytemplate = "1.2.1"
+tempfile = "3.3.0"
+
+[dependencies.uuid]
+version = "1.1.2"
+features = [
+    "serde",
+    "v4",                # Lets you generate random UUIDs
+    "fast-rng",          # Use a faster (but still sufficiently random) RNG
+    "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
+]
 
