@@ -3,7 +3,7 @@ FROM ubuntu:latest as build
 RUN apt-get update && \
     apt-get install apt-transport-https ca-certificates -y && \
     update-ca-certificates && \
-    apt-get install g++ git libcap-dev build-essential nano curl && \
+    apt-get install g++ git libcap-dev build-essential nano curl -y && \
     git clone https://github.com/polymath-cc/isolate.git /opt/isolate && \
     git clone https://github.com/polymath-cc/pms-slave.git /opt/pms-slave
 
@@ -27,7 +27,7 @@ FROM ubuntu:latest
 RUN apt-get update && \
     apt-get install apt-transport-https ca-certificates -y && \
     update-ca-certificates && \
-    apt-get install g++ gcc python3 python rustc libcap-dev build-essential
+    apt-get install g++ gcc python3 python rustc libcap-dev build-essential -y
 
 WORKDIR /opt/isolate
 RUN make install
