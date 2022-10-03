@@ -27,7 +27,7 @@ FROM ubuntu:latest
 RUN apt-get update && \
     apt-get install apt-transport-https ca-certificates -y && \
     update-ca-certificates && \
-    apt-get install g++ gcc python3 python rustc libcap-dev build-essential -y
+    apt-get install g++ gcc python3 python2 rustc libcap-dev build-essential -y
 
 WORKDIR /opt/isolate
 RUN make install
