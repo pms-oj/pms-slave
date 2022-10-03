@@ -14,7 +14,7 @@ RUN make isolate
 
 WORKDIR /opt/rust
 RUN curl https://sh.rustup.rs -s >> rustup.sh
-RUN chmod 755 /rust/rustup.sh
+RUN chmod 755 /opt/rust/rustup.sh
 RUN ./rustup.sh -y
 
 ENV PATH=/root/.cargo/bin:$PATH
