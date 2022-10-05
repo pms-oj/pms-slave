@@ -178,7 +178,7 @@ impl State {
                                         stdout_path: stdout_p.clone(),
                                         box_dir: dir.path().to_path_buf(),
                                         language: onjudge.main_lang.clone(),
-                                        time_limit: onjudge.time_limit,
+                                        time_limit: (onjudge.time_limit as f64) * CONVERT_TO_SECONDS,
                                         mem_limit: onjudge.mem_limit,
                                     };
                                     let res = run.run();
@@ -221,8 +221,8 @@ impl State {
                                                 test.uuid,
                                                 JudgeState::WrongAnswer(
                                                     test.test_uuid,
-                                                    res_checker.meta.time.unwrap() as f64,
-                                                    res_checker.meta.cg_mem.unwrap() as f64,
+                                                    (res_checker.meta.time.unwrap()*CONVERT_TO_MILLISECS) as u64,
+                                                    res_checker.meta.cg_mem.unwrap(),
                                                 ),
                                             )
                                             .await
@@ -233,8 +233,8 @@ impl State {
                                                 test.uuid,
                                                 JudgeState::Accepted(
                                                     test.test_uuid,
-                                                    res_checker.meta.time.unwrap() as f64,
-                                                    res_checker.meta.cg_mem.unwrap() as f64,
+                                                    (res_checker.meta.time.unwrap()*CONVERT_TO_MILLISECS) as u64,
+                                                    res_checker.meta.cg_mem.unwrap(),
                                                 ),
                                             )
                                             .await

@@ -65,7 +65,7 @@ pub struct Run {
     pub language: Language,
     pub box_dir: PathBuf,
     pub time_limit: f64,
-    pub mem_limit: f64,
+    pub mem_limit: u64,
 }
 
 impl Run {
@@ -87,11 +87,11 @@ impl Run {
             .arg("--run")
             .arg(&format!(
                 "-t {}",
-                self.time_limit + self.language.add_time_limit
+                self.time_limit + ((self.language.add_time_limit as f64) * CONVERT_TO_SECONDS)
             ))
             .arg(&format!(
                 "-w {}",
-                self.time_limit + self.language.add_time_limit
+                self.time_limit + ((self.language.add_time_limit as f64) * CONVERT_TO_SECONDS)
             ))
             .arg(&format!(
                 "-m {}",
@@ -138,7 +138,7 @@ pub struct RunMeta {
     pub exitcode: Option<i32>,
     pub csw_voluntary: Option<i32>,
     pub csw_forced: Option<i32>,
-    pub cg_mem: Option<i32>,
+    pub cg_mem: Option<u64>,
     pub cg_oom_killed: Option<i32>,
 }
 

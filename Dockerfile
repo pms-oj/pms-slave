@@ -38,4 +38,4 @@ WORKDIR /app
 COPY --from=build /opt/pms-slave/target/release/pms-slave /usr/bin
 COPY --from=build /opt/pms-slave/langs /app
 COPY --from=build /opt/pms-slave/config.example.toml /app/config.toml
-CMD pms-slave
+ENTRYPOINT ["pms-slave"]

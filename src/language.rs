@@ -18,8 +18,8 @@ pub struct Language {
     pub version: String,
     pub exec_cmd: String,
     pub compile_cmd: String,
-    pub add_mem_limit: f64,
-    pub add_time_limit: f64,
+    pub add_mem_limit: u64,
+    pub add_time_limit: u64,
 }
 
 #[derive(Serialize)]

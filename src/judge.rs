@@ -14,6 +14,6 @@ pub struct OnJudge {
     pub checker_lang: Language,
     pub main_binary: PathBuf,
     pub checker_binary: PathBuf,
-    pub time_limit: f64,
-    pub mem_limit: f64,
+    pub time_limit: u64, // in ms
+    pub mem_limit: u64, // in ms
 }
