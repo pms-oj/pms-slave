@@ -49,7 +49,7 @@ struct State {
 }
 
 impl State {
-    async fn verify_token(&mut self, stream: Arc<TcpStream>) -> async_std::io::Result<()> {
+    async fn verify_token(&mut self, stream: Arc<Mutex<TcpStream>>) -> async_std::io::Result<()> {
         let body = BodyAfterHandshake::<()> {
             node_id: (*self.node_id.lock().await),
             client_pubkey: self.key.public_key(),
@@ -61,7 +61,7 @@ impl State {
 
     async fn update_judge(
         &self,
-        stream: Arc<TcpStream>,
+        stream: Arc<Mutex<TcpStream>>,
         uuid: Uuid,
         state: JudgeState,
     ) -> async_std::io::Result<()> {
@@ -84,7 +84,7 @@ impl State {
         packet.send(Arc::clone(&stream)).await
     }
 
-    async fn handle_command(&mut self, stream: Arc<TcpStream>, packet: Packet) {
+    async fn handle_command(&mut self, stream: Arc<Mutex<TcpStream>>, packet: Packet) {
         match packet.heady.header.command {
             Command::Handshake => {
                 if let Ok(res) = bincode::DefaultOptions::new()
@@ -102,7 +102,7 @@ impl State {
                             )));
                             info!(
                                 "Handshake was established from remote {:?}",
-                                stream.peer_addr()
+                                stream.lock().await.peer_addr()
                             );
                         }
                         HandshakeResult::PasswordNotMatched => {
@@ -178,7 +178,8 @@ impl State {
                                         stdout_path: stdout_p.clone(),
                                         box_dir: dir.path().to_path_buf(),
                                         language: onjudge.main_lang.clone(),
-                                        time_limit: (onjudge.time_limit as f64) * CONVERT_TO_SECONDS,
+                                        time_limit: (onjudge.time_limit as f64)
+                                            * CONVERT_TO_SECONDS,
                                         mem_limit: onjudge.mem_limit,
                                     };
                                     let res = run.run();
@@ -221,7 +222,9 @@ impl State {
                                                 test.uuid,
                                                 JudgeState::WrongAnswer(
                                                     test.test_uuid,
-                                                    (res_checker.meta.time.unwrap()*CONVERT_TO_MILLISECS) as u64,
+                                                    (res_checker.meta.time.unwrap()
+                                                        * CONVERT_TO_MILLISECS)
+                                                        as u64,
                                                     res_checker.meta.cg_mem.unwrap(),
                                                 ),
                                             )
@@ -233,7 +236,9 @@ impl State {
                                                 test.uuid,
                                                 JudgeState::Accepted(
                                                     test.test_uuid,
-                                                    (res_checker.meta.time.unwrap()*CONVERT_TO_MILLISECS) as u64,
+                                                    (res_checker.meta.time.unwrap()
+                                                        * CONVERT_TO_MILLISECS)
+                                                        as u64,
                                                     res_checker.meta.cg_mem.unwrap(),
                                                 ),
                                             )
@@ -249,14 +254,14 @@ impl State {
                                     .ok();
                             }
                         } else {
-                            error!("Unable to handle Command::TestCaseUpdate (JudgeState::JudgeNotFound");
+                            error!("Unable to handle Command::TestCaseUpdate (JudgeState::JudgeNotFound)");
                             self.update_judge(stream, test.uuid, JudgeState::JudgeNotFound)
                                 .await
                                 .ok();
                         }
                     } else {
                         error!(
-                            "Unable to handle Command::TestCaseUpdate (JudgeState::JudgeNotFound"
+                            "Unable to handle Command::TestCaseUpdate (JudgeState::JudgeNotFound)"
                         );
                         self.update_judge(stream, test.uuid, JudgeState::JudgeNotFound)
                             .await
@@ -349,22 +354,34 @@ impl State {
                                     judge_req.main_lang.clone()
                                 );
                             }
-                            self.update_judge(Arc::clone(&stream), judge_req.uuid, JudgeState::LanguageNotFound)
-                                .await
-                                .ok();
+                            self.update_judge(
+                                Arc::clone(&stream),
+                                judge_req.uuid,
+                                JudgeState::LanguageNotFound,
+                            )
+                            .await
+                            .ok();
                         } else {
                             error!(
                                 "Unable to get checker code language {}",
                                 judge_req.checker_lang.clone()
                             );
-                            self.update_judge(Arc::clone(&stream), judge_req.uuid, JudgeState::LanguageNotFound)
-                                .await
-                                .ok();
-                        }
-                    } else {
-                        self.update_judge(Arc::clone(&stream), judge_req.uuid, JudgeState::LockedSlave)
+                            self.update_judge(
+                                Arc::clone(&stream),
+                                judge_req.uuid,
+                                JudgeState::LanguageNotFound,
+                            )
                             .await
                             .ok();
+                        }
+                    } else {
+                        self.update_judge(
+                            Arc::clone(&stream),
+                            judge_req.uuid,
+                            JudgeState::LockedSlave,
+                        )
+                        .await
+                        .ok();
                     }
                 }
             }
@@ -381,7 +398,7 @@ pub async fn open_protocol() {
         let mut shutdown = false;
         // do master connection loop
         if let Ok(stream) = TcpStream::connect(CONFIG.master).await {
-            let stream: Arc<TcpStream> = Arc::new(stream);
+            let stream: Arc<Mutex<TcpStream>> = Arc::new(Mutex::new(stream));
             let key = EphemeralSecret::random(thread_rng());
             let (send, recv): (Sender<Actions>, Receiver<Actions>) = unbounded();
             let state = Arc::new(Mutex::new(State {
@@ -405,10 +422,7 @@ pub async fn open_protocol() {
                     .serialize(&handshake_req)
                     .unwrap(),
             );
-            handshake
-                .send(Arc::clone(&stream))
-                .await
-                .ok();
+            handshake.send(Arc::clone(&stream)).await.ok();
             loop {
                 if let Ok(actions) = recv.try_recv() {
                     match actions {
@@ -425,9 +439,7 @@ pub async fn open_protocol() {
                 }
                 // TODO: check connection
                 // packet loop
-                if let Ok(packet) =
-                    Packet::from_stream(Arc::clone(&stream)).await
-                {
+                if let Ok(packet) = Packet::from_stream(Arc::clone(&stream)).await {
                     let stream_cloned = Arc::clone(&stream);
                     let state_mutex = Arc::clone(&state);
                     spawn(async move {
