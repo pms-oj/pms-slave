@@ -49,19 +49,19 @@ struct State {
 }
 
 impl State {
-    async fn verify_token(&mut self, mut stream: &mut TcpStream) -> async_std::io::Result<()> {
+    async fn verify_token(&mut self, stream: Arc<TcpStream>) -> async_std::io::Result<()> {
         let body = BodyAfterHandshake::<()> {
             node_id: (*self.node_id.lock().await),
             client_pubkey: self.key.public_key(),
             req: (),
         };
         let packet = Packet::make_packet(Command::VerifyToken, body.bytes());
-        packet.send(Pin::new(&mut stream)).await
+        packet.send(Arc::clone(&stream)).await
     }
 
     async fn update_judge(
         &self,
-        mut stream: &mut TcpStream,
+        stream: Arc<TcpStream>,
         uuid: Uuid,
         state: JudgeState,
     ) -> async_std::io::Result<()> {
@@ -81,10 +81,10 @@ impl State {
                 .serialize(&body)
                 .unwrap(),
         );
-        packet.send(Pin::new(&mut stream)).await
+        packet.send(Arc::clone(&stream)).await
     }
 
-    async fn handle_command(&mut self, stream: &mut TcpStream, packet: Packet) {
+    async fn handle_command(&mut self, stream: Arc<TcpStream>, packet: Packet) {
         match packet.heady.header.command {
             Command::Handshake => {
                 if let Ok(res) = bincode::DefaultOptions::new()
@@ -281,7 +281,7 @@ impl State {
                                     let mut main_f = NamedTempFile::new().unwrap();
                                     *self.locked.lock().await = true;
                                     self.update_judge(
-                                        stream,
+                                        Arc::clone(&stream),
                                         judge_req.uuid,
                                         JudgeState::DoCompile,
                                     )
@@ -294,7 +294,7 @@ impl State {
                                     if let CompileResult::Error(stderr) = c_res {
                                         debug!("Unable to compile checker code: {}", stderr);
                                         self.update_judge(
-                                            stream,
+                                            Arc::clone(&stream),
                                             judge_req.uuid,
                                             JudgeState::InternalError(stderr),
                                         )
@@ -305,7 +305,7 @@ impl State {
                                         if let CompileResult::Error(stderr) = m_res {
                                             debug!("Unable to compile main code: {}", stderr);
                                             self.update_judge(
-                                                stream,
+                                                Arc::clone(&stream),
                                                 judge_req.uuid,
                                                 JudgeState::CompileError(stderr),
                                             )
@@ -324,7 +324,7 @@ impl State {
                                                     mem_limit: judge_req.mem_limit,
                                                 });
                                                 self.update_judge(
-                                                    stream,
+                                                    Arc::clone(&stream),
                                                     judge_req.uuid,
                                                     JudgeState::CompleteCompile(stdout),
                                                 )
@@ -336,7 +336,7 @@ impl State {
                                 } else {
                                     error!("Command::Handshake must be satisfied first");
                                     self.update_judge(
-                                        stream,
+                                        Arc::clone(&stream),
                                         judge_req.uuid,
                                         JudgeState::InternalError(String::new()),
                                     )
@@ -349,7 +349,7 @@ impl State {
                                     judge_req.main_lang.clone()
                                 );
                             }
-                            self.update_judge(stream, judge_req.uuid, JudgeState::LanguageNotFound)
+                            self.update_judge(Arc::clone(&stream), judge_req.uuid, JudgeState::LanguageNotFound)
                                 .await
                                 .ok();
                         } else {
@@ -357,12 +357,12 @@ impl State {
                                 "Unable to get checker code language {}",
                                 judge_req.checker_lang.clone()
                             );
-                            self.update_judge(stream, judge_req.uuid, JudgeState::LanguageNotFound)
+                            self.update_judge(Arc::clone(&stream), judge_req.uuid, JudgeState::LanguageNotFound)
                                 .await
                                 .ok();
                         }
                     } else {
-                        self.update_judge(stream, judge_req.uuid, JudgeState::LockedSlave)
+                        self.update_judge(Arc::clone(&stream), judge_req.uuid, JudgeState::LockedSlave)
                             .await
                             .ok();
                     }
@@ -380,8 +380,8 @@ pub async fn open_protocol() {
     loop {
         let mut shutdown = false;
         // do master connection loop
-        if let Ok(_stream) = TcpStream::connect(CONFIG.master).await {
-            let stream: Arc<Mutex<TcpStream>> = Arc::new(Mutex::new(_stream));
+        if let Ok(stream) = TcpStream::connect(CONFIG.master).await {
+            let stream: Arc<TcpStream> = Arc::new(stream);
             let key = EphemeralSecret::random(thread_rng());
             let (send, recv): (Sender<Actions>, Receiver<Actions>) = unbounded();
             let state = Arc::new(Mutex::new(State {
@@ -406,7 +406,7 @@ pub async fn open_protocol() {
                     .unwrap(),
             );
             handshake
-                .send(Pin::new(stream.lock().await.by_ref()))
+                .send(Arc::clone(&stream))
                 .await
                 .ok();
             loop {
@@ -426,15 +426,15 @@ pub async fn open_protocol() {
                 // TODO: check connection
                 // packet loop
                 if let Ok(packet) =
-                    Packet::from_stream(Pin::new(stream.lock().await.by_ref())).await
+                    Packet::from_stream(Arc::clone(&stream)).await
                 {
+                    let stream_cloned = Arc::clone(&stream);
                     let state_mutex = Arc::clone(&state);
-                    let stream_mutex = Arc::clone(&stream);
                     spawn(async move {
                         state_mutex
                             .lock()
                             .await
-                            .handle_command(stream_mutex.lock().await.by_ref(), packet)
+                            .handle_command(Arc::clone(&stream_cloned), packet)
                             .await
                     });
                 }

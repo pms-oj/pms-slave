@@ -526,7 +526,7 @@ dependencies = [
 [[package]]
 name = "judge-protocol"
 version = "0.1.0"
-source = "git+https://github.com/polymath-cc/judge-protocol#0f6e0cba2cd874193067c29761d5c0397301333d"
+source = "git+https://github.com/polymath-cc/judge-protocol#c408f181ee884fcefe0e7d2fc39ddc0311f0cec9"
 dependencies = [
  "async-std",
  "bincode",
