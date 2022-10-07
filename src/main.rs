@@ -38,7 +38,10 @@ static LOGGER: logger::StdoutLogger = logger::StdoutLogger;
 
 #[async_std::main]
 async fn main() {
-    log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Info));
+    log::set_logger(&LOGGER)
+        .map(|()| log::set_max_level(LevelFilter::Debug))
+        .ok();
+    debug!("{:?}", LANGUAGES.clone());
     info!("pms-slave {}", env!("CARGO_PKG_VERSION"));
     open_protocol().await
 }

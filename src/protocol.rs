@@ -5,6 +5,8 @@ use async_std::task::spawn;
 use bincode::Options;
 
 use async_std::task::sleep;
+use futures::select;
+use futures::FutureExt;
 use judge_protocol::handshake::*;
 use judge_protocol::judge::*;
 use judge_protocol::packet::*;
@@ -49,7 +51,7 @@ struct State {
 }
 
 impl State {
-    async fn verify_token(&mut self, stream: Arc<Mutex<TcpStream>>) -> async_std::io::Result<()> {
+    async fn verify_token(&mut self, stream: Arc<TcpStream>) -> async_std::io::Result<()> {
         let body = BodyAfterHandshake::<()> {
             node_id: (*self.node_id.lock().await),
             client_pubkey: self.key.public_key(),
@@ -61,7 +63,7 @@ impl State {
 
     async fn update_judge(
         &self,
-        stream: Arc<Mutex<TcpStream>>,
+        stream: Arc<TcpStream>,
         uuid: Uuid,
         state: JudgeState,
     ) -> async_std::io::Result<()> {
@@ -84,7 +86,7 @@ impl State {
         packet.send(Arc::clone(&stream)).await
     }
 
-    async fn handle_command(&mut self, stream: Arc<Mutex<TcpStream>>, packet: Packet) {
+    async fn handle_command(&mut self, stream: Arc<TcpStream>, packet: Packet) {
         match packet.heady.header.command {
             Command::Handshake => {
                 if let Ok(res) = bincode::DefaultOptions::new()
@@ -95,14 +97,12 @@ impl State {
                     match res.result {
                         HandshakeResult::Success => {
                             self.node_id = Mutex::new(res.node_id.unwrap());
-                            let shared_key = self.key.diffie_hellman(&res.server_pubkey.unwrap());
-
                             self.shared = Arc::new(Mutex::new(Some(
                                 self.key.diffie_hellman(&res.server_pubkey.unwrap()),
                             )));
                             info!(
                                 "Handshake was established from remote {:?}",
-                                stream.lock().await.peer_addr()
+                                stream.peer_addr()
                             );
                         }
                         HandshakeResult::PasswordNotMatched => {
@@ -398,9 +398,9 @@ pub async fn open_protocol() {
         let mut shutdown = false;
         // do master connection loop
         if let Ok(stream) = TcpStream::connect(CONFIG.master).await {
-            let stream: Arc<Mutex<TcpStream>> = Arc::new(Mutex::new(stream));
+            let stream: Arc<TcpStream> = Arc::new(stream);
             let key = EphemeralSecret::random(thread_rng());
-            let (send, recv): (Sender<Actions>, Receiver<Actions>) = unbounded();
+            let (send, mut recv): (Sender<Actions>, Receiver<Actions>) = unbounded();
             let state = Arc::new(Mutex::new(State {
                 key: Arc::new(key),
                 locked: Mutex::new(false),
@@ -423,7 +423,9 @@ pub async fn open_protocol() {
                     .unwrap(),
             );
             handshake.send(Arc::clone(&stream)).await.ok();
+            //sleep(Duration::from_secs(1)).await;
             loop {
+                sleep(Duration::from_secs(1)).await;
                 if let Ok(actions) = recv.try_recv() {
                     match actions {
                         Actions::Reconnect(secs) => {
