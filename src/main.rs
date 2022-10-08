@@ -11,6 +11,7 @@ mod judge;
 mod language;
 mod logger;
 mod protocol;
+mod timer;
 
 pub const CONFIG_FILE: &'static str = "config.toml";
 

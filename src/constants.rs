@@ -1,4 +1,4 @@
-pub const SLEEP_TIME: u64 = 5;
+pub const SLEEP_TIME: u64 = 5; // in secs
 pub const ISOLATE: &'static str = "isolate";
 pub const LOG_FILE_NAME: &'static str = "main.log";
 pub const STDIN_FILE_NAME: &'static str = "stdin.in";
@@ -10,3 +10,4 @@ pub const CHECKER_TIME_LIMIT: f64 = 5.0;
 pub const CHECKER_MEM_LIMIT: u64 = 1024;
 pub const CONVERT_TO_MILLISECS: f64 = 1000.0;
 pub const CONVERT_TO_SECONDS: f64 = 0.001;
+pub const CHECK_ALIVE_TIME: u64 = 5; // in secs

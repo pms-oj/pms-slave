@@ -30,12 +30,13 @@ use crate::constants::*;
 use crate::container::*;
 use crate::judge::*;
 use crate::language::CompileResult;
+use crate::timer::*;
 use crate::{CONFIG, LANGUAGES, MASTER_PASS};
 use log::{debug, error, info};
 use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug)]
-enum Actions {
+pub enum Actions {
     Reconnect(u64),
     Shutdown,
     Unknown,
@@ -464,7 +465,7 @@ pub async fn open_protocol() {
                 locked: Mutex::new(false),
                 node_id: Mutex::new(std::u32::MAX),
                 shared: Arc::new(Mutex::new(None)),
-                signal: Arc::new(Mutex::new(send)),
+                signal: Arc::new(Mutex::new(send.clone())),
                 judge: Arc::new(Mutex::new(None)),
             }));
             let handshake_req = HandshakeRequest {
@@ -481,34 +482,42 @@ pub async fn open_protocol() {
                     .unwrap(),
             );
             handshake.send(Arc::clone(&stream)).await.ok();
+            {
+                let send_cloned = send.clone();
+                let stream_cloned = Arc::clone(&stream);
+                spawn(async move { check_alive(send_cloned, stream_cloned).await });
+            }
             //sleep(Duration::from_secs(1)).await;
             loop {
-                sleep(Duration::from_secs(1)).await;
-                if let Ok(actions) = recv.try_recv() {
-                    match actions {
-                        Actions::Reconnect(secs) => {
-                            sleep(Duration::from_secs(secs)).await;
-                            break;
-                        }
-                        Actions::Shutdown => {
-                            shutdown = true;
-                            break;
-                        }
-                        _ => {}
-                    }
+                select! {
+                    actions = recv.next().fuse() => match actions {
+                        Some(action) => match action {
+                            Actions::Reconnect(secs) => {
+                                sleep(Duration::from_secs(secs)).await;
+                                break;
+                            }
+                            Actions::Shutdown => {
+                                shutdown = true;
+                                break;
+                            }
+                            _ => {}
+                        },
+                        None => {}
+                    },
+                packet = Packet::from_stream(Arc::clone(&stream)).fuse() => match packet {
+                    Ok(packet) => {
+                        let stream_cloned = Arc::clone(&stream);
+                        let state_mutex = Arc::clone(&state);
+                        spawn(async move {
+                            state_mutex
+                                .lock()
+                                .await
+                                .handle_command(Arc::clone(&stream_cloned), packet)
+                                .await
+                        });
+                    },
+                    Err(_) => {}
                 }
-                // TODO: check connection
-                // packet loop
-                if let Ok(packet) = Packet::from_stream(Arc::clone(&stream)).await {
-                    let stream_cloned = Arc::clone(&stream);
-                    let state_mutex = Arc::clone(&state);
-                    spawn(async move {
-                        state_mutex
-                            .lock()
-                            .await
-                            .handle_command(Arc::clone(&stream_cloned), packet)
-                            .await
-                    });
                 }
             }
             drop(state);
