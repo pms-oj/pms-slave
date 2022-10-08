@@ -17,7 +17,8 @@ pub struct Language {
     pub name: String, // Display name
     pub version: String,
     pub exec_cmd: String,
-    pub compile_cmd: String,
+    pub compile_exec: String,
+    pub compile_args: String,
     pub add_mem_limit: u64,
     pub add_time_limit: u64,
 }
@@ -47,9 +48,9 @@ impl Language {
         tt.render("exec", &exec).unwrap()
     }
 
-    pub fn parse_compile_cmd(&self, infile: PathBuf, outfile: PathBuf) -> String {
+    pub fn parse_compile_args(&self, infile: PathBuf, outfile: PathBuf) -> String {
         let mut tt = TinyTemplate::new();
-        tt.add_template("compile", &self.compile_cmd).ok();
+        tt.add_template("compile", &self.compile_args).ok();
         let compile = CompileCmd { infile, outfile };
         tt.render("compile", &compile).unwrap()
     }
@@ -57,8 +58,11 @@ impl Language {
     pub fn compile(&self, code: Vec<u8>, outfile: PathBuf) -> CompileResult {
         let mut tempfile = NamedTempFile::new().unwrap();
         tempfile.write_all(&code).ok();
+        tempfile.flush().ok();
+        let path = tempfile.path();
         let cmd =
-            Command::new(self.parse_compile_cmd(tempfile.into_temp_path().to_path_buf(), outfile))
+            Command::new(&self.compile_exec)
+                .args(self.parse_compile_args(path.to_path_buf(), outfile).split_whitespace())
                 .output()
                 .expect("Failed to compile");
         if cmd.status.success() {
