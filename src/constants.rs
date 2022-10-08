@@ -1,5 +1,6 @@
 pub const SLEEP_TIME: u64 = 5;
 pub const ISOLATE: &'static str = "isolate";
+pub const LOG_FILE_NAME: &'static str = "main.log";
 pub const STDIN_FILE_NAME: &'static str = "stdin.in";
 pub const STDOUT_FILE_NAME: &'static str = "stdout.out";
 pub const STDOUT_ORIGIN_FILE_NAME: &'static str = "stdout_origin.out";

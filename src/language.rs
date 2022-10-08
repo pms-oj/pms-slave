@@ -19,6 +19,7 @@ pub struct Language {
     pub exec_cmd: String,
     pub compile_exec: String,
     pub compile_args: String,
+    pub entry_source: String,
     pub add_mem_limit: u64,
     pub add_time_limit: u64,
 }
@@ -56,15 +57,19 @@ impl Language {
     }
 
     pub fn compile(&self, code: Vec<u8>, outfile: PathBuf) -> CompileResult {
-        let mut tempfile = NamedTempFile::new().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(self.entry_source.clone());
+        let mut tempfile = std::fs::File::create(path.clone()).unwrap();
         tempfile.write_all(&code).ok();
         tempfile.flush().ok();
-        let path = tempfile.path();
-        let cmd =
-            Command::new(&self.compile_exec)
-                .args(self.parse_compile_args(path.to_path_buf(), outfile).split_whitespace())
-                .output()
-                .expect("Failed to compile");
+        let cmd = Command::new(&self.compile_exec)
+            .args(
+                self.parse_compile_args(path.to_path_buf(), outfile.clone())
+                    .split_whitespace(),
+            )
+            .output()
+            .expect("Failed to compile");
+        debug!("{:?}", outfile.clone());
         if cmd.status.success() {
             CompileResult::Success(String::from_utf8(cmd.stdout).unwrap())
         } else {

@@ -143,6 +143,11 @@ impl State {
                         .await;
                 }
             }
+            Command::TestCaseEnd => {
+                debug!("end judge");
+                *self.judge.lock().await = None;
+                *self.locked.lock().await = false;
+            }
             Command::TestCaseUpdate => {
                 if let Ok(test) = bincode::DefaultOptions::new()
                     .with_big_endian()
@@ -156,27 +161,24 @@ impl State {
                                     let key = expand_key(shared_key);
                                     let (stdin, stdout_origin) =
                                         (test.stdin.decrypt(&key), test.stdout.decrypt(&key));
-                                    let (mut stdin_f, mut stdout_origin_f, mut stdout_f) = (
-                                        NamedTempFile::new().unwrap(),
-                                        NamedTempFile::new().unwrap(),
-                                        NamedTempFile::new().unwrap(),
+                                    let (stdin_p, stdout_origin_p, stdout_p) = (
+                                        onjudge.tempdir.path().join(STDIN_FILE_NAME),
+                                        onjudge.tempdir.path().join(STDOUT_ORIGIN_FILE_NAME),
+                                        onjudge.tempdir.path().join(STDOUT_FILE_NAME),
+                                    );
+                                    let (mut stdin_f, mut stdout_origin_f) = (
+                                        std::fs::File::create(stdin_p.clone()).unwrap(),
+                                        std::fs::File::create(stdout_origin_p.clone()).unwrap(),
                                     );
                                     stdin_f.write_all(&stdin).ok();
+                                    stdin_f.flush().ok();
                                     stdout_origin_f.write_all(&stdout_origin).ok();
-                                    let (stdin_p, stdout_origin_p, stdout_p) = (
-                                        stdin_f.into_temp_path().to_path_buf(),
-                                        stdout_origin_f.into_temp_path().to_path_buf(),
-                                        stdout_f.into_temp_path().to_path_buf(),
-                                    );
-                                    let dir = tempfile::tempdir().unwrap();
-                                    std::fs::copy(
-                                        onjudge.main_binary.clone(),
-                                        dir.path().join(BINARY_NAME),
-                                    );
+                                    stdout_origin_f.flush().ok();
                                     let run = Run {
                                         stdin_path: stdin_p.clone(),
                                         stdout_path: stdout_p.clone(),
-                                        box_dir: dir.path().to_path_buf(),
+                                        binary_path: onjudge.main_binary.clone(),
+                                        box_dir: tempfile::tempdir().unwrap(),
                                         language: onjudge.main_lang.clone(),
                                         time_limit: (onjudge.time_limit as f64)
                                             * CONVERT_TO_SECONDS,
@@ -188,9 +190,6 @@ impl State {
                                         match status {
                                             _ => {}
                                         }
-                                        // Stop judge
-                                        *self.locked.lock().await = false;
-                                        *self.judge.lock().await = None;
                                     } else {
                                         // Success
                                         // Let's check stdout by checker
@@ -213,7 +212,8 @@ impl State {
                                         );
                                         let checker = CheckerRun {
                                             checker_lang: onjudge.checker_lang.clone(),
-                                            box_dir: dir_checker.path().to_path_buf(),
+                                            binary_path: onjudge.checker_binary.clone(),
+                                            box_dir: dir_checker,
                                         };
                                         let res_checker = checker.run();
                                         if let Some(status_checker) = res_checker.meta.status {
@@ -282,8 +282,6 @@ impl State {
                                     let key = expand_key(shared_key);
                                     let checker_code = judge_req.checker_code.decrypt(&key);
                                     let main_code = judge_req.main_code.decrypt(&key);
-                                    let mut checker_f = NamedTempFile::new().unwrap();
-                                    let mut main_f = NamedTempFile::new().unwrap();
                                     *self.locked.lock().await = true;
                                     self.update_judge(
                                         Arc::clone(&stream),
@@ -292,8 +290,9 @@ impl State {
                                     )
                                     .await
                                     .ok();
-                                    let c_path = checker_f.into_temp_path().to_path_buf();
-                                    let m_path = main_f.into_temp_path().to_path_buf();
+                                    let dir = tempfile::tempdir().unwrap();
+                                    let c_path = dir.path().join(CHECKER_NAME);
+                                    let m_path = dir.path().join(BINARY_NAME);
                                     let c_res = checker_lang.compile(checker_code, c_path.clone());
                                     let m_res = main_lang.compile(main_code, m_path.clone());
                                     if let CompileResult::Error(stderr) = c_res {
@@ -327,6 +326,7 @@ impl State {
                                                     checker_binary: c_path,
                                                     time_limit: judge_req.time_limit,
                                                     mem_limit: judge_req.mem_limit,
+                                                    tempdir: dir,
                                                 });
                                                 self.update_judge(
                                                     Arc::clone(&stream),
@@ -353,14 +353,14 @@ impl State {
                                     "Unable to get main code language {}",
                                     judge_req.main_lang.clone()
                                 );
+                                self.update_judge(
+                                    Arc::clone(&stream),
+                                    judge_req.uuid,
+                                    JudgeState::LanguageNotFound,
+                                )
+                                .await
+                                .ok();
                             }
-                            self.update_judge(
-                                Arc::clone(&stream),
-                                judge_req.uuid,
-                                JudgeState::LanguageNotFound,
-                            )
-                            .await
-                            .ok();
                         } else {
                             error!(
                                 "Unable to get checker code language {}",
@@ -375,6 +375,7 @@ impl State {
                             .ok();
                         }
                     } else {
+                        error!("Unable to handle Command::GetJudge (JudgeState::LockedSlave)");
                         self.update_judge(
                             Arc::clone(&stream),
                             judge_req.uuid,

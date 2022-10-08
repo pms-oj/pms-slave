@@ -4,6 +4,7 @@ use judge_protocol::judge::*;
 use judge_protocol::packet::*;
 use std::path::PathBuf;
 use std::pin::Pin;
+use tempfile::TempDir;
 use uuid::Uuid;
 
 use crate::language::Language;
@@ -15,5 +16,6 @@ pub struct OnJudge {
     pub main_binary: PathBuf,
     pub checker_binary: PathBuf,
     pub time_limit: u64, // in ms
-    pub mem_limit: u64,  // in ms
+    pub mem_limit: u64,  // in kb
+    pub tempdir: TempDir,
 }
