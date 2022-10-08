@@ -7,10 +7,6 @@ use std::path::PathBuf;
 use std::process::Command;
 use tempfile::{tempdir, TempDir};
 
-pub fn join_work_dir(file: &str) -> String {
-    format!("{}/{}", CONFIG.isolate_work_dir, file)
-}
-
 #[derive(Debug)]
 pub struct CheckerRun {
     pub checker_lang: Language,

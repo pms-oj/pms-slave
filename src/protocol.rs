@@ -188,7 +188,60 @@ impl State {
                                     if let Some(status) = res.meta.status {
                                         // Failed?
                                         match status {
-                                            _ => {}
+                                            RunStatus::TimedOut => {
+                                                self.update_judge(
+                                                    stream,
+                                                    test.uuid,
+                                                    JudgeState::TimeLimitExceed(test.test_uuid),
+                                                )
+                                                .await
+                                                .ok();
+                                            }
+                                            RunStatus::DiedOnSignal => {
+                                                self.update_judge(
+                                                    stream,
+                                                    test.uuid,
+                                                    JudgeState::DiedOnSignal(
+                                                        test.test_uuid,
+                                                        res.meta.exitsig.unwrap(),
+                                                    ),
+                                                )
+                                                .await
+                                                .ok();
+                                            }
+                                            RunStatus::InternalErr => {
+                                                self.update_judge(
+                                                    stream,
+                                                    test.uuid,
+                                                    JudgeState::RuntimeError(
+                                                        test.test_uuid,
+                                                        res.meta.exitcode.unwrap(),
+                                                    ),
+                                                )
+                                                .await
+                                                .ok();
+                                            }
+                                            RunStatus::RuntimeErr => {
+                                                self.update_judge(
+                                                    stream,
+                                                    test.uuid,
+                                                    JudgeState::RuntimeError(
+                                                        test.test_uuid,
+                                                        res.meta.exitcode.unwrap(),
+                                                    ),
+                                                )
+                                                .await
+                                                .ok();
+                                            }
+                                            _ => {
+                                                self.update_judge(
+                                                    stream,
+                                                    test.uuid,
+                                                    JudgeState::UnknownError,
+                                                )
+                                                .await
+                                                .ok();
+                                            }
                                         }
                                     } else {
                                         // Success
@@ -197,19 +250,23 @@ impl State {
                                         std::fs::copy(
                                             onjudge.checker_binary.clone(),
                                             dir_checker.path().join(CHECKER_NAME),
-                                        );
+                                        )
+                                        .ok();
                                         std::fs::copy(
                                             stdin_p,
                                             dir_checker.path().join(STDIN_FILE_NAME),
-                                        );
+                                        )
+                                        .ok();
                                         std::fs::copy(
                                             stdout_p,
                                             dir_checker.path().join(STDOUT_FILE_NAME),
-                                        );
+                                        )
+                                        .ok();
                                         std::fs::copy(
                                             stdout_origin_p,
                                             dir_checker.path().join(STDOUT_ORIGIN_FILE_NAME),
-                                        );
+                                        )
+                                        .ok();
                                         let checker = CheckerRun {
                                             checker_lang: onjudge.checker_lang.clone(),
                                             binary_path: onjudge.checker_binary.clone(),
