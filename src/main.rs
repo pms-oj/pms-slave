@@ -22,6 +22,8 @@ use log::*;
 use config::Config;
 use language::Languages;
 use protocol::open_protocol;
+use logger::*;
+use fast_log::appender::LogAppender;
 
 lazy_static! {
     static ref CONFIG: Config = {
@@ -33,19 +35,22 @@ lazy_static! {
     static ref MASTER_PASS: Vec<u8> = {
         use sha3::{Digest, Sha3_256};
         let mut hasher = Sha3_256::new();
-        hasher.update(CONFIG.master_pass.clone());
+        hasher.update(CONFIG.host.master_pass.clone());
         hasher.finalize().to_vec()
     };
 }
 
-static LOGGER: logger::StdoutLogger = logger::StdoutLogger;
-
 #[async_std::main]
 async fn main() {
-    log::set_logger(&LOGGER)
-        .map(|()| log::set_max_level(LevelFilter::Debug))
-        .ok();
-    debug!("{:?}", LANGUAGES.clone());
+    match CONFIG.logging.method {
+        Method::Stdout => {
+            fast_log::init(fast_log::Config::new().level(CONFIG.logging.max_level.unwrap().to_level_filter()).custom(Logger {}).console()).unwrap();
+        }
+        Method::File => {
+            fast_log::init(fast_log::Config::new().level(CONFIG.logging.max_level.unwrap().to_level_filter()).custom(Logger {}).file("log/pms-slave.log")).unwrap();
+        }
+        _ => {}
+    }
     info!("pms-slave {}", env!("CARGO_PKG_VERSION"));
     open_protocol().await
 }

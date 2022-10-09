@@ -1,11 +1,12 @@
 FROM ubuntu:latest as build
 
+COPY . /opt/pms-slave
+
 RUN apt-get update && \
     apt-get install apt-transport-https ca-certificates -y && \
     update-ca-certificates && \
     apt-get install g++ git libcap-dev build-essential nano curl -y && \
-    git clone https://github.com/polymath-cc/isolate.git /opt/isolate && \
-    git clone https://github.com/polymath-cc/pms-slave.git /opt/pms-slave
+    git clone https://github.com/polymath-cc/isolate.git /opt/isolate
 
 RUN mkdir -p /opt/rust /app /work
 
@@ -27,7 +28,8 @@ FROM ubuntu:latest
 RUN apt-get update && \
     apt-get install apt-transport-https ca-certificates -y && \
     update-ca-certificates && \
-    apt-get install g++ gcc python3 python2 rustc libcap-dev build-essential -y
+    apt-get install g++ gcc python3 python2 rustc libcap-dev build-essential -y && \
+    mkdir -p /usr/share/testlib
 
 COPY --from=build /opt/isolate /opt/isolate
 
@@ -36,6 +38,7 @@ RUN make install
 
 WORKDIR /app
 COPY --from=build /opt/pms-slave/target/release/pms-slave /usr/bin
-COPY --from=build /opt/pms-slave/langs /app
+COPY --from=build /opt/pms-slave/langs /app/langs
 COPY --from=build /opt/pms-slave/config.example.toml /app/config.toml
+COPY --from=build /opt/pms-slave/assets/testlib/testlib.h /usr/share/testlib/testlib.h
 ENTRYPOINT ["pms-slave"]

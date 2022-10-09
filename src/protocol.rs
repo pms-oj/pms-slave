@@ -32,7 +32,7 @@ use crate::judge::*;
 use crate::language::CompileResult;
 use crate::timer::*;
 use crate::{CONFIG, LANGUAGES, MASTER_PASS};
-use log::{debug, error, info};
+use log::{trace, error, info};
 use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug)]
@@ -145,7 +145,7 @@ impl State {
                 }
             }
             Command::TestCaseEnd => {
-                debug!("end judge");
+                trace!("end judge");
                 *self.judge.lock().await = None;
                 *self.locked.lock().await = false;
             }
@@ -162,30 +162,43 @@ impl State {
                                     let key = expand_key(shared_key);
                                     let (stdin, stdout_origin) =
                                         (test.stdin.decrypt(&key), test.stdout.decrypt(&key));
+                                    let run_tempdir = tempfile::tempdir().unwrap();
                                     let (stdin_p, stdout_origin_p, stdout_p) = (
                                         onjudge.tempdir.path().join(STDIN_FILE_NAME),
                                         onjudge.tempdir.path().join(STDOUT_ORIGIN_FILE_NAME),
                                         onjudge.tempdir.path().join(STDOUT_FILE_NAME),
                                     );
-                                    let (mut stdin_f, mut stdout_origin_f) = (
+                                    let (mut stdin_f, mut stdout_origin_f, mut stdout_f) = (
                                         std::fs::File::create(stdin_p.clone()).unwrap(),
                                         std::fs::File::create(stdout_origin_p.clone()).unwrap(),
+                                        std::fs::File::create(stdout_p.clone()).unwrap(),
                                     );
-                                    stdin_f.write_all(&stdin).ok();
+                                    use std::os::unix::fs::PermissionsExt;
+                                    stdout_f.flush().ok();
+                                    std::fs::set_permissions(
+                                        onjudge.tempdir.path().to_path_buf(),
+                                        std::fs::Permissions::from_mode(0o777),
+                                    )
+                                    .ok();
+                                    std::fs::set_permissions(
+                                        stdout_p.clone(),
+                                        std::fs::Permissions::from_mode(0o777),
+                                    )
+                                    .ok();
+                                    trace!("{:?}", stdin_f.write_all(&stdin));
                                     stdin_f.flush().ok();
                                     stdout_origin_f.write_all(&stdout_origin).ok();
                                     stdout_origin_f.flush().ok();
                                     let run = Run {
-                                        stdin_path: stdin_p.clone(),
-                                        stdout_path: stdout_p.clone(),
-                                        binary_path: onjudge.main_binary.clone(),
-                                        box_dir: tempfile::tempdir().unwrap(),
+                                        temp_path: onjudge.tempdir.path().to_path_buf(),
+                                        box_dir: run_tempdir,
                                         language: onjudge.main_lang.clone(),
                                         time_limit: (onjudge.time_limit as f64)
                                             * CONVERT_TO_SECONDS,
                                         mem_limit: onjudge.mem_limit,
                                     };
                                     let res = run.run();
+                                    trace!("{:?}", res.meta.clone());
                                     if let Some(status) = res.meta.status {
                                         // Failed?
                                         match status {
@@ -214,10 +227,7 @@ impl State {
                                                 self.update_judge(
                                                     stream,
                                                     test.uuid,
-                                                    JudgeState::RuntimeError(
-                                                        test.test_uuid,
-                                                        res.meta.exitcode.unwrap(),
-                                                    ),
+                                                    JudgeState::InternalError(test.test_uuid),
                                                 )
                                                 .await
                                                 .ok();
@@ -248,32 +258,13 @@ impl State {
                                         // Success
                                         // Let's check stdout by checker
                                         let dir_checker = tempfile::tempdir().unwrap();
-                                        std::fs::copy(
-                                            onjudge.checker_binary.clone(),
-                                            dir_checker.path().join(CHECKER_NAME),
-                                        )
-                                        .ok();
-                                        std::fs::copy(
-                                            stdin_p,
-                                            dir_checker.path().join(STDIN_FILE_NAME),
-                                        )
-                                        .ok();
-                                        std::fs::copy(
-                                            stdout_p,
-                                            dir_checker.path().join(STDOUT_FILE_NAME),
-                                        )
-                                        .ok();
-                                        std::fs::copy(
-                                            stdout_origin_p,
-                                            dir_checker.path().join(STDOUT_ORIGIN_FILE_NAME),
-                                        )
-                                        .ok();
                                         let checker = CheckerRun {
                                             checker_lang: onjudge.checker_lang.clone(),
-                                            binary_path: onjudge.checker_binary.clone(),
+                                            temp_path: onjudge.tempdir.path().to_path_buf(),
                                             box_dir: dir_checker,
                                         };
                                         let res_checker = checker.run();
+                                        trace!("{:?}", res_checker.meta);
                                         if let Some(status_checker) = res_checker.meta.status {
                                             self.update_judge(
                                                 stream,
@@ -354,18 +345,18 @@ impl State {
                                     let c_res = checker_lang.compile(checker_code, c_path.clone());
                                     let m_res = main_lang.compile(main_code, m_path.clone());
                                     if let CompileResult::Error(stderr) = c_res {
-                                        debug!("Unable to compile checker code: {}", stderr);
+                                        trace!("Unable to compile checker code: {}", stderr);
                                         self.update_judge(
                                             Arc::clone(&stream),
                                             judge_req.uuid,
-                                            JudgeState::InternalError(stderr),
+                                            JudgeState::GeneralError(stderr),
                                         )
                                         .await
                                         .ok();
                                         *self.locked.lock().await = false;
                                     } else {
                                         if let CompileResult::Error(stderr) = m_res {
-                                            debug!("Unable to compile main code: {}", stderr);
+                                            trace!("Unable to compile main code: {}", stderr);
                                             self.update_judge(
                                                 Arc::clone(&stream),
                                                 judge_req.uuid,
@@ -401,7 +392,7 @@ impl State {
                                     self.update_judge(
                                         Arc::clone(&stream),
                                         judge_req.uuid,
-                                        JudgeState::InternalError(String::new()),
+                                        JudgeState::GeneralError(String::new()),
                                     )
                                     .await
                                     .ok();
@@ -456,7 +447,7 @@ pub async fn open_protocol() {
     loop {
         let mut shutdown = false;
         // do master connection loop
-        if let Ok(stream) = TcpStream::connect(CONFIG.master).await {
+        if let Ok(stream) = TcpStream::connect(CONFIG.host.master).await {
             let stream: Arc<TcpStream> = Arc::new(stream);
             let key = EphemeralSecret::random(thread_rng());
             let (send, mut recv): (Sender<Actions>, Receiver<Actions>) = unbounded();
@@ -524,7 +515,8 @@ pub async fn open_protocol() {
             drop(recv);
         } else {
             error!(
-                "Cannot connect to server. Trying to connect in {} secs ...",
+                "Cannot connect to server {:?}. Trying to connect in {} secs ...",
+                CONFIG.host.master.clone(),
                 SLEEP_TIME
             );
             sleep(Duration::from_secs(SLEEP_TIME)).await;

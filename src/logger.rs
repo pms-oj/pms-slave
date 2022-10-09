@@ -1,17 +1,35 @@
-use log::{Level, Log, Metadata, Record};
+use log::{Level, Log, Metadata, Record, LevelFilter};
+use serde::{Serialize, Deserialize};
+use fast_log::appender::*;
 
-pub struct StdoutLogger;
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+pub enum Method {
+    None,
+    Stdout,
+    File,
+}
 
-impl Log for StdoutLogger {
-    fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= Level::max()
-    }
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+pub enum MaxLevel {
+    Debug,
+    Info,
+    Error,
+    Trace,
+}
 
-    fn log(&self, record: &Record) {
-        if self.enabled(record.metadata()) {
-            println!("PMS-slave: {} - {}", record.level(), record.args());
+impl MaxLevel {
+    pub fn to_level_filter(&self) -> LevelFilter {
+        match self {
+            Self::Debug => LevelFilter::Debug,
+            Self::Info => LevelFilter::Info,
+            Self::Error => LevelFilter::Error,
+            Self::Trace => LevelFilter::Trace,
         }
     }
+}
 
-    fn flush(&self) {}
+pub struct Logger;
+
+impl LogAppender for Logger {
+    fn do_logs(&self, records: &[FastLogRecord]) {}
 }

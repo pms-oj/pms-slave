@@ -69,7 +69,7 @@ impl Language {
             )
             .output()
             .expect("Failed to compile");
-        debug!("{:?}", outfile.clone());
+        trace!("{:?}", outfile.clone());
         if cmd.status.success() {
             CompileResult::Success(String::from_utf8(cmd.stdout).unwrap())
         } else {

@@ -10,7 +10,7 @@ use tempfile::{tempdir, TempDir};
 #[derive(Debug)]
 pub struct CheckerRun {
     pub checker_lang: Language,
-    pub binary_path: PathBuf,
+    pub temp_path: PathBuf,
     pub box_dir: TempDir,
 }
 
@@ -18,34 +18,55 @@ impl CheckerRun {
     pub fn run(&self) -> RunResult {
         // Clean up
         let _ = Command::new(ISOLATE)
+            .arg("--cg")
             .arg("--cleanup")
             .output()
             .expect("Failed to run isolate command");
         // Init sandbox
         let _ = Command::new(ISOLATE)
             .arg("--init")
+            .arg("--cg")
             .output()
             .expect("Failed to run isolate command");
         // Run
         let dir = tempdir().unwrap();
         let log_p = dir.path().join(LOG_FILE_NAME);
-        let _ = Command::new(ISOLATE)
+        let out = Command::new(ISOLATE)
             .arg("--run")
-            .arg(&format!("-t {}", CHECKER_TIME_LIMIT))
-            .arg(&format!("-w {}", CHECKER_TIME_LIMIT))
-            .arg(&format!("-m {}", CHECKER_MEM_LIMIT))
+            .arg("--cg")
+            .arg(&format!(
+                "-t {}",
+                CHECKER_TIME_LIMIT
+                    + ((self.checker_lang.add_time_limit as f64) * CONVERT_TO_SECONDS)
+            ))
+            .arg(&format!(
+                "-w {}",
+                CHECKER_TIME_LIMIT
+                    + ((self.checker_lang.add_time_limit as f64) * CONVERT_TO_SECONDS)
+            ))
+            .arg(&format!(
+                "-m {}",
+                CHECKER_MEM_LIMIT + self.checker_lang.add_mem_limit
+            ))
+            .arg(&format!(
+                "--cg-mem={}",
+                CHECKER_MEM_LIMIT + self.checker_lang.add_mem_limit
+            ))
             .arg("-s")
             .arg(&format!("--meta={}", log_p.clone().display()))
-            .arg(&format!(
-                "{} ./{} ./{} ./{}",
-                self.checker_lang.parse_exec_cmd(self.binary_path.clone()),
-                STDIN_FILE_NAME,
-                STDOUT_ORIGIN_FILE_NAME,
-                STDOUT_FILE_NAME,
-            ))
+            .arg(&format!("--dir=temp={}", self.temp_path.display()))
             .arg(&format!("--dir=box={}", self.box_dir.path().display()))
+            .arg(&format!(
+                "{}",
+                self.checker_lang
+                    .parse_exec_cmd(PathBuf::from(&format!("/temp/{}", CHECKER_NAME)))
+            ))
+            .arg(&format!("/temp/{}", STDIN_FILE_NAME))
+            .arg(&format!("/temp/{}", STDOUT_FILE_NAME))
+            .arg(&format!("/temp/{}", STDOUT_ORIGIN_FILE_NAME))
             .output()
             .expect("Failed to run isolate command");
+        trace!("stderr: {}", String::from_utf8(out.stderr).unwrap());
         let meta = {
             let s = read_to_string(log_p).expect("Some error occured");
             parse_meta(s).expect("Some error occured")
@@ -56,9 +77,7 @@ impl CheckerRun {
 
 #[derive(Debug)]
 pub struct Run {
-    pub stdin_path: PathBuf,
-    pub stdout_path: PathBuf,
-    pub binary_path: PathBuf,
+    pub temp_path: PathBuf,
     pub language: Language,
     pub box_dir: TempDir,
     pub time_limit: f64,
@@ -69,19 +88,22 @@ impl Run {
     pub fn run(&self) -> RunResult {
         // Clean up
         let _ = Command::new(ISOLATE)
+            .arg("--cg")
             .arg("--cleanup")
             .output()
             .expect("Failed to run isolate command");
         // Init sandbox
         let _ = Command::new(ISOLATE)
             .arg("--init")
+            .arg("--cg")
             .output()
             .expect("Failed to run isolate command");
         // Run
         let dir = tempdir().unwrap();
         let log_p = dir.path().join(LOG_FILE_NAME);
-        let _ = Command::new(ISOLATE)
+        let out = Command::new(ISOLATE)
             .arg("--run")
+            .arg("--cg")
             .arg(&format!(
                 "-t {}",
                 self.time_limit + ((self.language.add_time_limit as f64) * CONVERT_TO_SECONDS)
@@ -94,15 +116,23 @@ impl Run {
                 "-m {}",
                 self.mem_limit + self.language.add_mem_limit
             ))
+            .arg(&format!(
+                "--cg-mem={}",
+                self.mem_limit + self.language.add_mem_limit
+            ))
             .arg("-s")
-            .arg("-p 1")
-            .arg(&format!("--stdin={}", self.stdin_path.display()))
-            .arg(&format!("--stdout={}", self.stdout_path.display()))
+            .arg(&format!("--stdin=/temp/{}", STDIN_FILE_NAME))
+            .arg(&format!("--stdout=/temp/{}", STDOUT_FILE_NAME))
             .arg(&format!("--meta={}", log_p.clone().display(),))
+            .arg(&format!("--dir=temp={}:rw", self.temp_path.display()))
             .arg(&format!("--dir=box={}", self.box_dir.path().display()))
-            .arg(self.language.parse_exec_cmd(self.binary_path.clone()))
+            .arg(
+                self.language
+                    .parse_exec_cmd(PathBuf::from(&format!("/temp/{}", BINARY_NAME))),
+            )
             .output()
             .expect("Failed to run isolate command");
+        trace!("stderr: {}", String::from_utf8(out.stderr).unwrap());
         let meta = {
             let s = read_to_string(log_p).expect("Some error occured");
             parse_meta(s).expect("Some error occured")
@@ -161,11 +191,11 @@ pub fn parse_meta(s: String) -> Option<RunMeta> {
             let v: Vec<&str> = line.split(':').collect();
             match v[0] {
                 "time" => {
-                    let time: f64 = v[1].parse::<f64>().expect("Some error occured");
+                    let time: f64 = v[1].parse::<f64>().expect("Some error occurred");
                     r.time = Some(time);
                 }
                 "time-wall" => {
-                    let time_wall: f64 = v[1].parse::<f64>().expect("Some error occured");
+                    let time_wall: f64 = v[1].parse::<f64>().expect("Some error occurred");
                     r.time_wall = Some(time_wall);
                 }
                 "status" => {
@@ -178,13 +208,21 @@ pub fn parse_meta(s: String) -> Option<RunMeta> {
                     };
                     r.status = Some(status);
                 }
+                "cg-mem" => {
+                    let cg_mem: u64 = v[1].parse::<u64>().expect("Some error occurred");
+                    r.cg_mem = Some(cg_mem);
+                }
+                "exitcode" => {
+                    let code: i32 = v[1].parse::<i32>().expect("Some error occurred");
+                    r.exitcode = Some(code);
+                }
+                "exitsig" => {
+                    let sig: i32 = v[1].parse::<i32>().expect("Some error occurred");
+                    r.exitsig = Some(sig);
+                }
                 _ => {}
             }
         }
     }
-    if r.status.is_none() {
-        None
-    } else {
-        Some(r)
-    }
+    Some(r)
 }
