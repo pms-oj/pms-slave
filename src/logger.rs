@@ -1,6 +1,6 @@
-use log::{Level, Log, Metadata, Record, LevelFilter};
-use serde::{Serialize, Deserialize};
 use fast_log::appender::*;
+use log::{Level, LevelFilter, Log, Metadata, Record};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub enum Method {

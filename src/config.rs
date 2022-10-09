@@ -15,7 +15,6 @@ pub struct Logging {
     pub max_level: Option<MaxLevel>,
 }
 
-
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Config {
     pub host: Host,

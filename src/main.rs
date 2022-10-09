@@ -20,10 +20,10 @@ use std::fs::read_to_string;
 use log::*;
 
 use config::Config;
-use language::Languages;
-use protocol::open_protocol;
-use logger::*;
 use fast_log::appender::LogAppender;
+use language::Languages;
+use logger::*;
+use protocol::open_protocol;
 
 lazy_static! {
     static ref CONFIG: Config = {
@@ -44,10 +44,22 @@ lazy_static! {
 async fn main() {
     match CONFIG.logging.method {
         Method::Stdout => {
-            fast_log::init(fast_log::Config::new().level(CONFIG.logging.max_level.unwrap().to_level_filter()).custom(Logger {}).console()).unwrap();
+            fast_log::init(
+                fast_log::Config::new()
+                    .level(CONFIG.logging.max_level.unwrap().to_level_filter())
+                    .custom(Logger {})
+                    .console(),
+            )
+            .unwrap();
         }
         Method::File => {
-            fast_log::init(fast_log::Config::new().level(CONFIG.logging.max_level.unwrap().to_level_filter()).custom(Logger {}).file("log/pms-slave.log")).unwrap();
+            fast_log::init(
+                fast_log::Config::new()
+                    .level(CONFIG.logging.max_level.unwrap().to_level_filter())
+                    .custom(Logger {})
+                    .file("log/pms-slave.log"),
+            )
+            .unwrap();
         }
         _ => {}
     }

@@ -32,7 +32,7 @@ use crate::judge::*;
 use crate::language::CompileResult;
 use crate::timer::*;
 use crate::{CONFIG, LANGUAGES, MASTER_PASS};
-use log::{trace, error, info};
+use log::{error, info, trace};
 use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug)]
