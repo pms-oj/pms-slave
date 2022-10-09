@@ -11,8 +11,10 @@ use crate::protocol::Actions;
 pub async fn check_alive(action_tx: Sender<Actions>, stream: Arc<TcpStream>) {
     loop {
         sleep(Duration::from_secs(CHECK_ALIVE_TIME)).await;
-        if let Err(_) = stream.peer_addr() {
-            action_tx.send(Actions::Reconnect(0)).await.ok();
+        if let Ok(val) = stream.peek(&mut vec![0]).await {
+            if val == 0 {
+                action_tx.send(Actions::Reconnect(0)).await.ok();
+            }
         }
     }
 }
