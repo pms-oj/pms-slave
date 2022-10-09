@@ -13,6 +13,6 @@ file logging path is `${PWD}/log/pms-slave.log` for default
 
 ## TODO
 
-## LICENSE
+## License
 
 - [testlib](https://github.com/MikeMirzayanov/testlib) by MikeMirzayanov in [MIT License](https://opensource.org/licenses/MIT)
