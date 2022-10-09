@@ -185,7 +185,7 @@ impl State {
                                         std::fs::Permissions::from_mode(0o777),
                                     )
                                     .ok();
-                                    trace!("{:?}", stdin_f.write_all(&stdin));
+                                    stdin_f.write_all(&stdin).ok();
                                     stdin_f.flush().ok();
                                     stdout_origin_f.write_all(&stdout_origin).ok();
                                     stdout_origin_f.flush().ok();
