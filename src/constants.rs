@@ -11,3 +11,4 @@ pub const CHECKER_MEM_LIMIT: u64 = 1048576;
 pub const CONVERT_TO_MILLISECS: f64 = 1000.0;
 pub const CONVERT_TO_SECONDS: f64 = 0.001;
 pub const CHECK_ALIVE_TIME: u64 = 5; // in secs
+pub const LOG_CONFIG_FILE: &'static str = "log4rs.yaml";

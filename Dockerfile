@@ -40,5 +40,6 @@ WORKDIR /app
 COPY --from=build /opt/pms-slave/target/release/pms-slave /usr/bin
 COPY --from=build /opt/pms-slave/langs /app/langs
 COPY --from=build /opt/pms-slave/config.example.toml /app/config.toml
+COPY --from=build /opt/pms-slave/log4rs.example.yaml /app/log4rs.yaml
 COPY --from=build /opt/pms-slave/assets/testlib/testlib.h /usr/share/testlib/testlib.h
 ENTRYPOINT ["pms-slave"]

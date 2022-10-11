@@ -9,7 +9,6 @@ mod constants;
 mod container;
 mod judge;
 mod language;
-mod logger;
 mod protocol;
 mod timer;
 
@@ -20,10 +19,9 @@ use std::fs::read_to_string;
 use log::*;
 
 use config::Config;
-use fast_log::appender::LogAppender;
 use language::Languages;
-use logger::*;
 use protocol::open_protocol;
+use constants::LOG_CONFIG_FILE;
 
 lazy_static! {
     static ref CONFIG: Config = {
@@ -42,27 +40,7 @@ lazy_static! {
 
 #[async_std::main]
 async fn main() {
-    match CONFIG.logging.method {
-        Method::Stdout => {
-            fast_log::init(
-                fast_log::Config::new()
-                    .level(CONFIG.logging.max_level.unwrap().to_level_filter())
-                    .custom(Logger {})
-                    .console(),
-            )
-            .unwrap();
-        }
-        Method::File => {
-            fast_log::init(
-                fast_log::Config::new()
-                    .level(CONFIG.logging.max_level.unwrap().to_level_filter())
-                    .custom(Logger {})
-                    .file("log/pms-slave.log"),
-            )
-            .unwrap();
-        }
-        _ => {}
-    }
+    log4rs::init_file(LOG_CONFIG_FILE, Default::default()).unwrap();
     info!("pms-slave {}", env!("CARGO_PKG_VERSION"));
     open_protocol().await
 }
