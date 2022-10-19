@@ -102,13 +102,13 @@ impl State {
                                 self.key.diffie_hellman(&res.server_pubkey.unwrap()),
                             )));
                             info!(
-                                "Handshake was established from remote {:?}",
-                                stream.peer_addr()
+                                "Handshake was established from remote {}",
+                                stream.peer_addr().unwrap()
                             );
                         }
                         HandshakeResult::PasswordNotMatched => {
                             error!("Master password is not matched. Trying to shutdown ...");
-                            self.signal.lock().await.send(Actions::Shutdown).await;
+                            self.signal.lock().await.send(Actions::Shutdown).await.ok();
                         }
                         _ => {
                             error!("Unknown detected");
@@ -447,7 +447,7 @@ pub async fn open_protocol() {
     loop {
         let mut shutdown = false;
         // do master connection loop
-        if let Ok(stream) = TcpStream::connect(CONFIG.host.master).await {
+        if let Ok(stream) = TcpStream::connect(CONFIG.host.master.clone()).await {
             let stream: Arc<TcpStream> = Arc::new(stream);
             let key = EphemeralSecret::random(thread_rng());
             let (send, mut recv): (Sender<Actions>, Receiver<Actions>) = unbounded();

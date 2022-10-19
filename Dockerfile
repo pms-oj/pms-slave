@@ -1,14 +1,12 @@
-FROM ubuntu:latest as build
+FROM oraclelinux:9-slim as build
 
 COPY . /opt/pms-slave
 
-RUN apt-get update && \
-    apt-get install apt-transport-https ca-certificates -y && \
-    update-ca-certificates && \
-    apt-get install g++ git libcap-dev build-essential nano curl -y && \
+RUN microdnf upgrade -y && \
+    microdnf install make g++ git libcap-devel nano curl -y && \
     git clone https://github.com/polymath-cc/isolate.git /opt/isolate
 
-RUN mkdir -p /opt/rust /app /work
+RUN mkdir -p /opt/rust /app
 
 WORKDIR /opt/isolate
 RUN make isolate
@@ -23,12 +21,10 @@ ENV PATH=/root/.cargo/bin:$PATH
 WORKDIR /opt/pms-slave
 RUN cargo build --release
 
-FROM ubuntu:latest
+FROM oraclelinux:9-slim
 
-RUN apt-get update && \
-    apt-get install apt-transport-https ca-certificates -y && \
-    update-ca-certificates && \
-    apt-get install g++ gcc python3 python2 rustc libcap-dev build-essential -y && \
+RUN microdnf upgrade -y && \
+    microdnf install make g++ git libcap-devel nano curl -y && \
     mkdir -p /usr/share/testlib
 
 COPY --from=build /opt/isolate /opt/isolate
