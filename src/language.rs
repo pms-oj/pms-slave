@@ -9,7 +9,7 @@ use std::process::Command;
 use tempfile::NamedTempFile;
 use tinytemplate::TinyTemplate;
 
-const LANGUAGES_DIR: &'static str = "langs";
+use crate::constants::*;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct Language {
@@ -30,15 +30,55 @@ pub struct ExecCmd {
 }
 
 #[derive(Serialize)]
+pub struct ExecSh {
+    language_command: String,
+}
+
+#[derive(Serialize)]
 pub struct CompileCmd {
     infile: PathBuf,
     outfile: PathBuf,
+}
+
+#[derive(Serialize)]
+pub struct MakeCmd {
+    threads: usize,
 }
 
 #[derive(Clone, Debug)]
 pub enum CompileResult {
     Success(String),
     Error(String),
+}
+
+pub fn parse_make_args() -> String {
+    let mut tt = TinyTemplate::new();
+    tt.add_template("make", MAKE_ARGS).ok();
+    let make = MakeCmd {
+        threads: num_cpus::get(),
+    };
+    tt.render("make", &make).unwrap()
+}
+
+pub async fn compile_with_graders(
+    grader_path: PathBuf,
+    code: Vec<u8>,
+    code_rpath: String,
+) -> CompileResult {
+    // TODO: make it works as asynchronous
+    let path = grader_path.join(code_rpath);
+    let mut tempfile = std::fs::File::create(path.clone()).unwrap();
+    tempfile.write_all(&code).ok();
+    tempfile.flush().ok();
+    let cmd = Command::new(MAKE)
+        .args(parse_make_args().split_whitespace())
+        .output()
+        .expect("Failed to compile");
+    if cmd.status.success() {
+        CompileResult::Success(String::from_utf8(cmd.stdout).unwrap())
+    } else {
+        CompileResult::Error(String::from_utf8(cmd.stderr).unwrap())
+    }
 }
 
 impl Language {
@@ -49,6 +89,16 @@ impl Language {
         tt.render("exec", &exec).unwrap()
     }
 
+    pub fn parse_exec_sh(&self, binary_path: PathBuf) -> String {
+        let mut tt = TinyTemplate::new();
+        tt.add_template("sh", include_str!("../assets/scripts/exec.template.sh"))
+            .ok();
+        let sh = ExecSh {
+            language_command: self.parse_exec_cmd(binary_path),
+        };
+        tt.render("sh", &sh).unwrap()
+    }
+
     pub fn parse_compile_args(&self, infile: PathBuf, outfile: PathBuf) -> String {
         let mut tt = TinyTemplate::new();
         tt.add_template("compile", &self.compile_args).ok();
@@ -56,7 +106,8 @@ impl Language {
         tt.render("compile", &compile).unwrap()
     }
 
-    pub fn compile(&self, code: Vec<u8>, outfile: PathBuf) -> CompileResult {
+    pub async fn compile(&self, code: Vec<u8>, outfile: PathBuf) -> CompileResult {
+        // TODO: make it works as asynchronous
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(self.entry_source.clone());
         let mut tempfile = std::fs::File::create(path.clone()).unwrap();
@@ -85,7 +136,7 @@ pub struct Languages {
 
 impl Languages {
     pub fn load() -> io::Result<Self> {
-        let binding = format!("./{}", LANGUAGES_DIR).clone();
+        let binding = format!("./{}", LANGUAGES_PATH).clone();
         let dir = Path::new(&binding);
         assert_eq!(dir.is_dir(), true);
         let mut map = HashMap::new();

@@ -7,6 +7,6 @@ services:
     build: ./
     restart: always
     volumes:
-      - ./langs:/app/langs
-      - ./config.toml:/app/config.toml
-      - ./log:/app/log
+      - ./langs:/app/langs:z
+      - ./config.toml:/app/config.toml:z
+      - ./log:/app/log:z

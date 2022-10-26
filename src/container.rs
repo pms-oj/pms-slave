@@ -76,6 +76,95 @@ impl CheckerRun {
 }
 
 #[derive(Debug)]
+pub struct Runv2 {
+    pub temp_path: PathBuf,
+    pub object_path: String,
+    pub main_lang: Language,
+    pub manager_lang: Language,
+    pub box_dir: TempDir,
+    pub time_limit: f64,
+    pub mem_limit: u64,
+}
+
+impl Runv2 {
+    pub fn run(&self) -> RunResult {
+        // Clean up
+        let _ = Command::new(ISOLATE)
+            .arg("--cg")
+            .arg("--cleanup")
+            .output()
+            .expect("Failed to run isolate command");
+        // Init sandbox
+        let _ = Command::new(ISOLATE)
+            .arg("--init")
+            .arg("--cg")
+            .output()
+            .expect("Failed to run isolate command");
+        // Run
+        std::fs::copy(RUN_JUDGE_SH, self.box_dir.path().join(RUN_JUDGE_SH)).ok();
+        let exec_sh = self.box_dir.path().join(EXEC_SH);
+        let exec_man_sh = self.box_dir.path().join(EXEC_MAN_SH);
+        let mut exec_f = File::create(exec_sh).unwrap();
+        let mut exec_man_f = File::create(exec_man_sh).unwrap();
+        exec_f
+            .write_all(
+                self.main_lang
+                    .parse_exec_sh(PathBuf::from(&format!("/temp/{}", self.object_path)))
+                    .as_bytes(),
+            )
+            .ok();
+        exec_man_f
+            .write_all(
+                self.manager_lang
+                    .parse_exec_sh(PathBuf::from(&format!("/temp/{}", MANAGER_NAME)))
+                    .as_bytes(),
+            )
+            .ok();
+        exec_f.flush().ok();
+        exec_man_f.flush().ok();
+        let dir = tempdir().unwrap();
+        let log_p = dir.path().join(LOG_FILE_NAME);
+        let out = Command::new(ISOLATE)
+            .arg("--run")
+            .arg("--cg")
+            .arg(&format!(
+                "-t {}",
+                self.time_limit + ((self.main_lang.add_time_limit as f64) * CONVERT_TO_SECONDS)
+            ))
+            .arg(&format!(
+                "-w {}",
+                self.time_limit + ((self.main_lang.add_time_limit as f64) * CONVERT_TO_SECONDS)
+            ))
+            .arg(&format!(
+                "-m {}",
+                self.mem_limit + self.main_lang.add_mem_limit
+            ))
+            .arg(&format!(
+                "--cg-mem={}",
+                self.mem_limit + self.main_lang.add_mem_limit
+            ))
+            .arg("-s")
+            .arg(&format!("--stdin=/temp/{}", STDIN_FILE_NAME))
+            .arg(&format!("--meta={}", log_p.clone().display(),))
+            .arg(&format!("--dir=temp={}:r", self.temp_path.display()))
+            .arg(&format!("--dir=box={}:rw", self.box_dir.path().display()))
+            .arg(BASH)
+            .arg(RUN_JUDGE_SH)
+            .output()
+            .expect("Failed to run isolate command");
+        trace!("stderr: {}", String::from_utf8(out.stderr).unwrap());
+        let mut stdout_f = File::create(self.temp_path.join(STDOUT_FILE_NAME)).unwrap();
+        stdout_f.write_all(&out.stdout).ok();
+        stdout_f.flush().ok();
+        let meta = {
+            let s = read_to_string(log_p).expect("Some error occured");
+            parse_meta(s).expect("Some error occured")
+        };
+        RunResult { meta }
+    }
+}
+
+#[derive(Debug)]
 pub struct Run {
     pub temp_path: PathBuf,
     pub language: Language,

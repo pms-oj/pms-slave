@@ -12,6 +12,9 @@ mod language;
 mod protocol;
 mod timer;
 
+#[cfg(test)]
+mod tests;
+
 pub const CONFIG_FILE: &'static str = "config.toml";
 
 use std::fs::read_to_string;
@@ -19,9 +22,9 @@ use std::fs::read_to_string;
 use log::*;
 
 use config::Config;
+use constants::LOG_CONFIG_FILE;
 use language::Languages;
 use protocol::open_protocol;
-use constants::LOG_CONFIG_FILE;
 
 lazy_static! {
     static ref CONFIG: Config = {
