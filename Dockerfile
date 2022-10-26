@@ -1,6 +1,10 @@
-FROM oraclelinux:9-slim as build
+FROM lukemathwalker/cargo-chef:latest-rust-1 as planner
 
-COPY . /opt/pms-slave
+WORKDIR /app
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM oraclelinux:9-slim as build
 
 RUN microdnf upgrade -y && \
     microdnf install make g++ git libcap-devel nano curl -y && \
@@ -18,10 +22,14 @@ RUN ./rustup.sh -y
 
 ENV PATH=/root/.cargo/bin:$PATH
 
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo install cargo-chef
 WORKDIR /opt/pms-slave
+COPY . /opt/pms-slave
+RUN cargo chef cook --release --recipe-path recipe.json
 RUN cargo build --release
 
-FROM oraclelinux:9-slim
+FROM oraclelinux:9-slim as runtime
 
 RUN microdnf upgrade -y && \
     microdnf install make g++ git libcap-devel nano curl -y && \
@@ -38,4 +46,6 @@ COPY --from=build /opt/pms-slave/langs /app/langs
 COPY --from=build /opt/pms-slave/config.example.toml /app/config.toml
 COPY --from=build /opt/pms-slave/log4rs.example.yaml /app/log4rs.yaml
 COPY --from=build /opt/pms-slave/assets/testlib/testlib.h /usr/share/testlib/testlib.h
+COPY --from=build /opt/pms-slave/assets/testlib/testlib_ioi.h /usr/share/testlib/testlib_ioi.h
+COPY --from=build /opt/pms-slave/assets/scripts/run.judge.sh /app/run.judge.sh
 ENTRYPOINT ["pms-slave"]
