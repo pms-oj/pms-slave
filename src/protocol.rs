@@ -211,7 +211,12 @@ impl State {
                                             mem_limit: onjudge.mem_limit,
                                         };
                                         let res = run.run();
-                                        trace!("{:?}", res.meta.clone());
+                                        debug!(
+                                            "(Judge: {}) (Test: {}) {:?}",
+                                            onjudge.uuid,
+                                            test.uuid,
+                                            res.meta.clone()
+                                        );
                                         if let Some(status) = res.meta.status {
                                             // Failed?
                                             match status {
@@ -277,7 +282,12 @@ impl State {
                                                 box_dir: dir_checker,
                                             };
                                             let res_checker = checker.run();
-                                            trace!("{:?}", res_checker.meta);
+                                            debug!(
+                                                "(Checker) (Judge: {}) (Test: {}) {:?}",
+                                                onjudge.uuid,
+                                                test.uuid,
+                                                res_checker.meta.clone()
+                                            );
                                             if let Some(status_checker) = res_checker.meta.status {
                                                 self.update_judge(
                                                     stream,
@@ -401,19 +411,36 @@ impl State {
                                                 .await
                                                 .ok();
                                             } else {
-                                                self.update_judge(
-                                                    stream,
-                                                    test.uuid,
-                                                    JudgeState::Accepted(
-                                                        test.test_uuid,
-                                                        (res_checker.meta.time.unwrap()
-                                                            * CONVERT_TO_MILLISECS)
-                                                            as u64,
-                                                        res_checker.meta.cg_mem.unwrap(),
-                                                    ),
-                                                )
-                                                .await
-                                                .ok();
+                                                if let Some(score) = res_checker.score {
+                                                    self.update_judge(
+                                                        stream,
+                                                        test.uuid,
+                                                        JudgeState::Complete(
+                                                            test.test_uuid,
+                                                            score,
+                                                            (res_checker.meta.time.unwrap()
+                                                                * CONVERT_TO_MILLISECS)
+                                                                as u64,
+                                                            res_checker.meta.cg_mem.unwrap(),
+                                                        ),
+                                                    )
+                                                    .await
+                                                    .ok();
+                                                } else {
+                                                    self.update_judge(
+                                                        stream,
+                                                        test.uuid,
+                                                        JudgeState::Accepted(
+                                                            test.test_uuid,
+                                                            (res_checker.meta.time.unwrap()
+                                                                * CONVERT_TO_MILLISECS)
+                                                                as u64,
+                                                            res_checker.meta.cg_mem.unwrap(),
+                                                        ),
+                                                    )
+                                                    .await
+                                                    .ok();
+                                                }
                                             }
                                         }
                                     }
@@ -446,6 +473,7 @@ impl State {
                     .with_fixint_encoding()
                     .deserialize::<JudgeRequestBodyv2>(&packet.heady.body)
                 {
+                    info!("Got a new judgement (v2) request: {}", judge_req.uuid);
                     if !(*self.locked.lock().await) {
                         if let (Some(checker_lang), Some(main_lang), Some(manager_lang)) = (
                             LANGUAGES.get(judge_req.checker_lang),
@@ -459,9 +487,10 @@ impl State {
                                 let main_code = judge_req.main_code.decrypt(&key);
                                 let manager_code = judge_req.manager_code.decrypt(&key);
                                 let graders_buf = judge_req.graders.decrypt(&key);
-                                let graders_decoder = BrotliDecoder::new(graders_buf.as_slice());
-                                let graders_ar = Archive::new(graders_decoder);
+                                //let graders_decoder = BrotliDecoder::new(graders_buf.as_slice());
+                                let graders_ar = Archive::new(graders_buf.as_slice());
                                 let dir = tempfile::tempdir().unwrap();
+                                //dbg!(std::process::Command::new("ls -la").current_dir(dir.path()).output().unwrap().stdout);
                                 graders_ar.unpack(dir.path()).await.ok();
                                 self.update_judge(
                                     Arc::clone(&stream),
@@ -476,7 +505,6 @@ impl State {
                                     .path()
                                     .join(GRADERS_PATH)
                                     .join(judge_req.object_path.clone());
-                                //let c_res = checker_lang.compile(checker_code, c_path.clone());
                                 let graders_path = dir.path().join(GRADERS_PATH);
                                 let b_compile = compile_with_graders(
                                     graders_path,
@@ -502,14 +530,16 @@ impl State {
                                         if let (
                                             CompileResult::Success(_),
                                             CompileResult::Success(_),
-                                        ) = (c_res, m_res)
+                                        ) = (c_res.clone(), m_res.clone())
                                         {
                                             if !o_path.exists() {
                                                 trace!("o_path is not exists");
                                                 self.update_judge(
                                                     Arc::clone(&stream),
                                                     judge_req.uuid,
-                                                    JudgeState::GeneralError(String::new()),
+                                                    JudgeState::GeneralError(String::from(
+                                                        "o_path is not exists",
+                                                    )),
                                                 )
                                                 .await
                                                 .ok();
@@ -536,10 +566,16 @@ impl State {
                                                 .ok();
                                             }
                                         } else {
+                                            error!(
+                                                "Checker or manager compile failed: {:?}, {:?}",
+                                                c_res, m_res
+                                            );
                                             self.update_judge(
                                                 Arc::clone(&stream),
                                                 judge_req.uuid,
-                                                JudgeState::GeneralError(String::new()),
+                                                JudgeState::GeneralError(String::from(
+                                                    "Checker or manager compile failed",
+                                                )),
                                             )
                                             .await
                                             .ok();
@@ -578,6 +614,7 @@ impl State {
                     .with_fixint_encoding()
                     .deserialize::<JudgeRequestBody>(&packet.heady.body)
                 {
+                    info!("Got a new judgement request: {}", judge_req.uuid);
                     if !(*self.locked.lock().await) {
                         if let Some(checker_lang) = LANGUAGES.get(judge_req.checker_lang.clone()) {
                             if let Some(main_lang) = LANGUAGES.get(judge_req.main_lang.clone()) {
@@ -622,6 +659,12 @@ impl State {
                                                 *self.locked.lock().await = false;
                                             }
                                             CompileResult::Success(stdout) => {
+                                                use std::os::unix::fs::PermissionsExt;
+                                                std::fs::set_permissions(
+                                                    dir.path().to_path_buf(),
+                                                    std::fs::Permissions::from_mode(0o777),
+                                                )
+                                                .ok();
                                                 *self.judge.lock().await = Some(OnJudge {
                                                     uuid: judge_req.uuid,
                                                     main_lang: main_lang.clone(),

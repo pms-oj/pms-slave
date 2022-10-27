@@ -4,9 +4,10 @@ services:
   pms-slave:
     network_mode: "host"
     privileged: true
-    build: ./
-    restart: always
+    build: "./"
+    restart: "always"
     volumes:
-      - ./langs:/app/langs:z
-      - ./config.toml:/app/config.toml:z
-      - ./log:/app/log:z
+      - "./langs:/app/langs:z"
+      - "./config.toml:/app/config.toml:z"
+      - "./log:/app/log:z"
+    

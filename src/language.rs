@@ -71,6 +71,7 @@ pub async fn compile_with_graders(
     tempfile.write_all(&code).ok();
     tempfile.flush().ok();
     let cmd = Command::new(MAKE)
+        .current_dir(grader_path)
         .args(parse_make_args().split_whitespace())
         .output()
         .expect("Failed to compile");

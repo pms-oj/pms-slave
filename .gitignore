@@ -1,4 +1,6 @@
 /target
-config.toml
-log4rs.yaml
+/config.toml
+/log4rs.yaml
 /log
+/run.judge.sh
+/checker.sh

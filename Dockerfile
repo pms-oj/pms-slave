@@ -22,9 +22,9 @@ RUN ./rustup.sh -y
 
 ENV PATH=/root/.cargo/bin:$PATH
 
-COPY --from=planner /app/recipe.json recipe.json
 RUN cargo install cargo-chef
 WORKDIR /opt/pms-slave
+COPY --from=planner /app/recipe.json recipe.json
 COPY . /opt/pms-slave
 RUN cargo chef cook --release --recipe-path recipe.json
 RUN cargo build --release
@@ -33,6 +33,7 @@ FROM oraclelinux:9-slim as runtime
 
 RUN microdnf upgrade -y && \
     microdnf install make g++ git libcap-devel nano curl -y && \
+    microdnf --enablerepo=ol9_codeready_builder libstdc++-static glibc-static && \
     mkdir -p /usr/share/testlib
 
 COPY --from=build /opt/isolate /opt/isolate
@@ -46,6 +47,6 @@ COPY --from=build /opt/pms-slave/langs /app/langs
 COPY --from=build /opt/pms-slave/config.example.toml /app/config.toml
 COPY --from=build /opt/pms-slave/log4rs.example.yaml /app/log4rs.yaml
 COPY --from=build /opt/pms-slave/assets/testlib/testlib.h /usr/share/testlib/testlib.h
-COPY --from=build /opt/pms-slave/assets/testlib/testlib_ioi.h /usr/share/testlib/testlib_ioi.h
 COPY --from=build /opt/pms-slave/assets/scripts/run.judge.sh /app/run.judge.sh
+COPY --from=build /opt/pms-slave/assets/scripts/checker.sh /app/checker.sh
 ENTRYPOINT ["pms-slave"]
