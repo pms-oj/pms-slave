@@ -809,7 +809,10 @@ pub async fn open_protocol() {
                                 .await
                         });
                     },
-                    Err(_) => {}
+                    Err(err) => {
+                        error!("Got a packet error: {:?}", err);
+                        break;
+                    }
                 }
                 }
             }

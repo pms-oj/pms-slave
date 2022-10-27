@@ -2648,7 +2648,8 @@ NORETURN void InStream::quit(TResult result, const char* msg)
         if (appesMode)
         {
             if (isPartial) {
-                std::fprintf(resultFile, "outcome = \"%s\"\npctype = \"%d\"", outcomes[(int)_partially].c_str(), pctype);
+                std::fprintf(resultFile, "outcome = \"%s\"\n\n", outcomes[(int)_partially].c_str());
+                std::fprintf(resultFile, "pctype = \"%d\"", pctype);
             } else {
                 if (result != _points)
                     std::fprintf(resultFile, "outcome = \"%s\"", outcomes[(int)result].c_str());
@@ -2657,11 +2658,10 @@ NORETURN void InStream::quit(TResult result, const char* msg)
                     if (__testlib_points == std::numeric_limits<float>::infinity())
                         quit(_fail, "Expected points, but infinity found");
                     std::string stringPoints = removeDoubleTrailingZeroes(format("%.10f", __testlib_points));
-                    std::fprintf(resultFile, "outcome = \"%s\"\npoints = \"%s\"", outcomes[(int)result].c_str(), stringPoints.c_str());
+                    std::fprintf(resultFile, "outcome = \"%s\"\n\n", outcomes[(int)result].c_str());
+                    std::fprintf(resultFile, "points = \"%s\"", stringPoints.c_str());
                 }
             }
-            if (printMessage)
-                xmlSafeWrite(resultFile, msg);
         }
         else
         {
