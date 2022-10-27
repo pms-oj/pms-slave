@@ -487,8 +487,9 @@ impl State {
                                 let main_code = judge_req.main_code.decrypt(&key);
                                 let manager_code = judge_req.manager_code.decrypt(&key);
                                 let graders_buf = judge_req.graders.decrypt(&key);
-                                //let graders_decoder = BrotliDecoder::new(graders_buf.as_slice());
-                                let graders_ar = Archive::new(graders_buf.as_slice());
+                                let graders_decoder = BrotliDecoder::new(graders_buf.as_slice());
+                                let decoded = graders_decoder.into_inner();
+                                let graders_ar = Archive::new(decoded);
                                 let dir = tempfile::tempdir().unwrap();
                                 //dbg!(std::process::Command::new("ls -la").current_dir(dir.path()).output().unwrap().stdout);
                                 graders_ar.unpack(dir.path()).await.ok();
