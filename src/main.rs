@@ -29,7 +29,7 @@ use protocol::open_protocol;
 lazy_static! {
     static ref CONFIG: Config = {
         let s = read_to_string(CONFIG_FILE).expect("Some error occured");
-        info!("Loaded PMS slave config file");
+        println!("loaded pms-slave config file");
         toml::from_str(&s).expect("Some error occured")
     };
     static ref LANGUAGES: Languages = Languages::load().expect("Some error occured");
@@ -40,5 +40,6 @@ lazy_static! {
 async fn main() {
     log4rs::init_file(LOG_CONFIG_FILE, Default::default()).unwrap();
     info!("pms-slave {}", env!("CARGO_PKG_VERSION"));
+    CONFIG.validate();
     open_protocol().await
 }

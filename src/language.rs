@@ -6,10 +6,18 @@ use std::fs::{read_dir, read_to_string};
 use std::io::{self, prelude::*};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use async_std::fs::File;
+use async_std::io::prelude::*;
+
 use tempfile::NamedTempFile;
+
 use tinytemplate::TinyTemplate;
 
+use redis::{Client, AsyncCommands};
+
 use crate::constants::*;
+use crate::CONFIG;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct Language {
@@ -45,10 +53,16 @@ pub struct MakeCmd {
     threads: usize,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum CompileResult {
     Success(String),
     Error(String),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CacheGraderCompile {
+    result: CompileResult,
+    raw: Vec<u8>,
 }
 
 pub fn parse_make_args() -> String {
@@ -61,25 +75,63 @@ pub fn parse_make_args() -> String {
 }
 
 pub async fn compile_with_graders(
+    grader_hash: &[u8; 32],
     grader_path: PathBuf,
     code: Vec<u8>,
+    object_rpath: String,
     code_rpath: String,
 ) -> CompileResult {
+    if CONFIG.redis.enabled {
+        let code_hash = *blake3::hash(&code).as_bytes();
+        let client = redis::Client::open(CONFIG.redis.redis.as_ref().unwrap().clone()).expect(&format!("Cannot make connection to redis server: {}", CONFIG.redis.redis.as_ref().unwrap().clone()));
+        let mut con = client.get_async_connection().await.expect(&format!("Cannot establish connection to redis server: {}", CONFIG.redis.redis.as_ref().unwrap().clone()));
+        if let Ok(cache) = con.get(&[&grader_hash, &code_hash]).await {
+            let cache: Vec<u8> = cache;
+            if let Ok(cache_object) = bson::from_slice::<CacheGraderCompile>(&cache) {
+                let mut f = File::create(grader_path.clone().join(object_rpath)).await.unwrap();
+                f.write_all(&cache_object.raw).await.unwrap();
+                f.sync_all().await.unwrap();
+                return cache_object.result;
+            } else {
+                warn!("Maybe cache is corrupted?");
+            }
+        }
+    }
     // TODO: make it works as asynchronous
-    let path = grader_path.join(code_rpath);
-    let mut tempfile = std::fs::File::create(path.clone()).unwrap();
-    tempfile.write_all(&code).ok();
-    tempfile.flush().ok();
+    let path = grader_path.clone().join(code_rpath);
+    let mut tempfile = File::create(path.clone()).await.unwrap();
+    tempfile.write_all(&code).await.unwrap();
+    tempfile.sync_all().await.unwrap();
     let cmd = Command::new(MAKE)
-        .current_dir(grader_path)
+        .current_dir(grader_path.clone())
         .args(parse_make_args().split_whitespace())
         .output()
         .expect("Failed to compile");
-    if cmd.status.success() {
+    let res = if cmd.status.success() {
         CompileResult::Success(String::from_utf8(cmd.stdout).unwrap())
     } else {
         CompileResult::Error(String::from_utf8(cmd.stderr).unwrap())
+    };
+    if CONFIG.redis.enabled {
+        let object_data: Vec<u8> = {
+            if let Ok(mut object_f) = File::open(grader_path.join(object_rpath)).await {
+                let mut buf = vec![];
+                object_f.read_to_end(&mut buf).await.unwrap();
+                buf
+            } else {
+                vec![]
+            }
+        };
+        let cache = CacheGraderCompile {
+            result: res.clone(),
+            raw: object_data,
+        };
+        let code_hash: [u8;32] = *blake3::hash(&code).as_bytes();
+        let client = redis::Client::open(CONFIG.redis.redis.as_ref().unwrap().clone()).expect(&format!("Cannot make connection to redis server: {}", CONFIG.redis.redis.as_ref().unwrap().clone()));
+        let mut con = client.get_async_connection().await.expect(&format!("Cannot establish connection to redis server: {}", CONFIG.redis.redis.as_ref().unwrap().clone()));
+        let _: () = con.set(&[&grader_hash, &code_hash], bson::to_vec(&cache).unwrap()).await.unwrap();
     }
+    res
 }
 
 impl Language {

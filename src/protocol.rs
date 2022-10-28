@@ -4,6 +4,8 @@ use async_std::io::BufReader;
 use async_std::net::TcpStream;
 use async_std::prelude::*;
 use async_std::task::{spawn, sleep};
+use async_std::channel::{unbounded, Receiver, Sender};
+use async_std::sync::*;
 use async_tar::Archive;
 
 use bincode::Options;
@@ -20,14 +22,15 @@ use k256::PublicKey;
 use rand::thread_rng;
 use tempfile::NamedTempFile;
 
-use async_std::channel::{unbounded, Receiver, Sender};
-use async_std::sync::*;
-
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::time::Duration;
+
+use redis::Client;
+
+use uuid::Uuid;
 
 use crate::constants::*;
 use crate::container::*;
@@ -35,8 +38,6 @@ use crate::judge::*;
 use crate::language::{compile_with_graders, CompileResult};
 use crate::timer::*;
 use crate::{CONFIG, LANGUAGES, MASTER_PASS};
-use log::{error, info, trace};
-use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Actions {
@@ -483,6 +484,7 @@ impl State {
                                 let main_code = judge_req.main_code.decrypt(&key);
                                 let manager_code = judge_req.manager_code.decrypt(&key);
                                 let graders_buf = judge_req.graders.decrypt(&key);
+                                let graders_hash = *blake3::hash(&graders_buf).as_bytes();
                                 let graders_decoder = BrotliDecoder::new(graders_buf.as_slice());
                                 let decoded = graders_decoder.into_inner();
                                 let graders_ar = Archive::new(decoded);
@@ -504,8 +506,10 @@ impl State {
                                     .join(judge_req.object_path.clone());
                                 let graders_path = dir.path().join(GRADERS_PATH);
                                 let b_compile = compile_with_graders(
+                                    &graders_hash,
                                     graders_path,
                                     main_code,
+                                    judge_req.object_path.clone(),
                                     judge_req.main_path,
                                 );
                                 let c_compile = checker_lang.compile(checker_code, c_path.clone());
