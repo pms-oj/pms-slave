@@ -6,6 +6,10 @@ license = "GPL-3.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[[bin]]
+name = "pms-slave"
+path = "src/main.rs"
+
 [dependencies]
 toml = "0.5.9"
 serde = { version = "1.0", features = ["derive"] }
