@@ -3,12 +3,11 @@ use async_std::fs::DirBuilder;
 use async_std::io::BufReader;
 use async_std::net::TcpStream;
 use async_std::prelude::*;
-use async_std::task::spawn;
+use async_std::task::{spawn, sleep};
 use async_tar::Archive;
 
 use bincode::Options;
 
-use async_std::task::sleep;
 use futures::FutureExt;
 use futures::{join, select};
 use judge_protocol::handshake::*;
@@ -48,17 +47,17 @@ pub enum Actions {
 
 struct State {
     key: Arc<EphemeralSecret>,
-    locked: Mutex<bool>,
-    node_id: Mutex<u32>,
-    shared: Arc<Mutex<Option<SharedSecret>>>,
-    signal: Arc<Mutex<Sender<Actions>>>,
-    judge: Arc<Mutex<Option<OnJudge>>>,
+    locked: RwLock<bool>,
+    node_id: RwLock<u32>,
+    shared: Arc<RwLock<Option<SharedSecret>>>,
+    signal: Sender<Actions>,
+    judge: Arc<RwLock<Option<OnJudge>>>,
 }
 
 impl State {
-    async fn verify_token(&mut self, stream: Arc<TcpStream>) -> async_std::io::Result<()> {
+    async fn verify_token(&self, stream: Arc<TcpStream>) -> async_std::io::Result<()> {
         let body = BodyAfterHandshake::<()> {
-            node_id: (*self.node_id.lock().await),
+            node_id: (*self.node_id.read().await),
             client_pubkey: self.key.public_key(),
             req: (),
         };
@@ -73,7 +72,7 @@ impl State {
         state: JudgeState,
     ) -> async_std::io::Result<()> {
         let body = BodyAfterHandshake {
-            node_id: *self.node_id.lock().await,
+            node_id: *self.node_id.read().await,
             client_pubkey: self.key.public_key(),
             req: JudgeResponseBody {
                 uuid,
@@ -91,7 +90,7 @@ impl State {
         packet.send(Arc::clone(&stream)).await
     }
 
-    async fn handle_command(&mut self, stream: Arc<TcpStream>, packet: Packet) {
+    async fn handle_command(&self, stream: Arc<TcpStream>, packet: Packet) {
         match packet.heady.header.command {
             Command::Handshake => {
                 if let Ok(res) = bincode::DefaultOptions::new()
@@ -101,10 +100,10 @@ impl State {
                 {
                     match res.result {
                         HandshakeResult::Success => {
-                            self.node_id = Mutex::new(res.node_id.unwrap());
-                            self.shared = Arc::new(Mutex::new(Some(
+                            *self.node_id.write().await = res.node_id.unwrap();
+                            *self.shared.write().await = Some(
                                 self.key.diffie_hellman(&res.server_pubkey.unwrap()),
-                            )));
+                            );
                             info!(
                                 "Handshake was established from remote {}",
                                 stream.peer_addr().unwrap()
@@ -112,7 +111,7 @@ impl State {
                         }
                         HandshakeResult::PasswordNotMatched => {
                             error!("Master password is not matched. Trying to shutdown ...");
-                            self.signal.lock().await.send(Actions::Shutdown).await.ok();
+                            self.signal.send(Actions::Shutdown).await.ok();
                         }
                         _ => {
                             error!("Unknown detected");
@@ -121,8 +120,6 @@ impl State {
                 } else {
                     error!("An error occurred on processing Command::Handshake. Trying to reconnect in {} secs ...", SLEEP_TIME);
                     self.signal
-                        .lock()
-                        .await
                         .send(Actions::Reconnect(SLEEP_TIME))
                         .await
                         .ok();
@@ -136,15 +133,13 @@ impl State {
                 {
                     if !state {
                         info!("Session was expired. Trying to reconnect ...");
-                        self.signal.lock().await.send(Actions::Reconnect(0)).await;
+                        self.signal.send(Actions::Reconnect(0)).await;
                     } else {
                         info!("Command::VerifyToken was succeed");
                     }
                 } else {
                     error!("An error occurred on processing Command::ReqVerifyToken. Trying to reconnect in {} secs ...", SLEEP_TIME);
                     self.signal
-                        .lock()
-                        .await
                         .send(Actions::Reconnect(SLEEP_TIME))
                         .await
                         .ok();
@@ -152,8 +147,8 @@ impl State {
             }
             Command::TestCaseEnd => {
                 trace!("end judge");
-                *self.judge.lock().await = None;
-                *self.locked.lock().await = false;
+                *self.judge.write().await = None;
+                *self.locked.write().await = false;
             }
             Command::TestCaseUpdate => {
                 if let Ok(test) = bincode::DefaultOptions::new()
@@ -161,10 +156,10 @@ impl State {
                     .with_fixint_encoding()
                     .deserialize::<TestCaseUpdateBody>(&packet.heady.body)
                 {
-                    if let Some(onjudge) = self.judge.lock().await.as_ref() {
+                    if let Some(onjudge) = self.judge.read().await.as_ref() {
                         if onjudge.uuid == test.uuid {
-                            if *self.locked.lock().await {
-                                if let Some(shared_key) = self.shared.lock().await.as_ref() {
+                            if *self.locked.read().await {
+                                if let Some(shared_key) = self.shared.read().await.as_ref() {
                                     let key = expand_key(shared_key);
                                     let (stdin, stdout_origin) =
                                         (test.stdin.decrypt(&key), test.stdout.decrypt(&key));
@@ -475,14 +470,14 @@ impl State {
                     .deserialize::<JudgeRequestBodyv2>(&packet.heady.body)
                 {
                     info!("Got a new judgement (v2) request: {}", judge_req.uuid);
-                    if !(*self.locked.lock().await) {
+                    if !(*self.locked.read().await) {
                         if let (Some(checker_lang), Some(main_lang), Some(manager_lang)) = (
                             LANGUAGES.get(judge_req.checker_lang),
                             LANGUAGES.get(judge_req.main_lang),
                             LANGUAGES.get(judge_req.manager_lang),
                         ) {
-                            if let Some(shared_key) = self.shared.lock().await.as_ref() {
-                                *self.locked.lock().await = true;
+                            if let Some(shared_key) = self.shared.read().await.as_ref() {
+                                *self.locked.write().await = true;
                                 let key = expand_key(shared_key);
                                 let checker_code = judge_req.checker_code.decrypt(&key);
                                 let main_code = judge_req.main_code.decrypt(&key);
@@ -526,7 +521,7 @@ impl State {
                                         )
                                         .await
                                         .ok();
-                                        *self.locked.lock().await = false;
+                                        *self.locked.write().await = false;
                                     }
                                     CompileResult::Success(stdout) => {
                                         if let (
@@ -545,9 +540,9 @@ impl State {
                                                 )
                                                 .await
                                                 .ok();
-                                                *self.locked.lock().await = false;
+                                                *self.locked.write().await = false;
                                             } else {
-                                                *self.judge.lock().await = Some(OnJudge {
+                                                *self.judge.write().await = Some(OnJudge {
                                                     uuid: judge_req.uuid,
                                                     main_lang: main_lang.clone(),
                                                     checker_lang: checker_lang.clone(),
@@ -582,7 +577,7 @@ impl State {
                                             )
                                             .await
                                             .ok();
-                                            *self.locked.lock().await = false;
+                                            *self.locked.write().await = false;
                                         }
                                     }
                                 }
@@ -596,7 +591,7 @@ impl State {
                             )
                             .await
                             .ok();
-                            *self.locked.lock().await = false;
+                            *self.locked.write().await = false;
                         }
                     } else {
                         error!("Unable to handle Command::GetJudgev2 (JudgeState::LockedSlave)");
@@ -607,7 +602,7 @@ impl State {
                         )
                         .await
                         .ok();
-                        *self.locked.lock().await = false;
+                        *self.locked.write().await = false;
                     }
                 }
             }
@@ -618,14 +613,14 @@ impl State {
                     .deserialize::<JudgeRequestBody>(&packet.heady.body)
                 {
                     info!("Got a new judgement request: {}", judge_req.uuid);
-                    if !(*self.locked.lock().await) {
+                    if !(*self.locked.read().await) {
                         if let Some(checker_lang) = LANGUAGES.get(judge_req.checker_lang.clone()) {
                             if let Some(main_lang) = LANGUAGES.get(judge_req.main_lang.clone()) {
-                                if let Some(shared_key) = self.shared.lock().await.as_ref() {
+                                if let Some(shared_key) = self.shared.read().await.as_ref() {
                                     let key = expand_key(shared_key);
                                     let checker_code = judge_req.checker_code.decrypt(&key);
                                     let main_code = judge_req.main_code.decrypt(&key);
-                                    *self.locked.lock().await = true;
+                                    *self.locked.write().await = true;
                                     self.update_judge(
                                         Arc::clone(&stream),
                                         judge_req.uuid,
@@ -647,7 +642,7 @@ impl State {
                                         )
                                         .await
                                         .ok();
-                                        *self.locked.lock().await = false;
+                                        *self.locked.write().await = false;
                                     } else {
                                         match m_res.await {
                                             CompileResult::Error(stderr) => {
@@ -659,7 +654,7 @@ impl State {
                                                 )
                                                 .await
                                                 .ok();
-                                                *self.locked.lock().await = false;
+                                                *self.locked.write().await = false;
                                             }
                                             CompileResult::Success(stdout) => {
                                                 use std::os::unix::fs::PermissionsExt;
@@ -668,7 +663,7 @@ impl State {
                                                     std::fs::Permissions::from_mode(0o777),
                                                 )
                                                 .ok();
-                                                *self.judge.lock().await = Some(OnJudge {
+                                                *self.judge.write().await = Some(OnJudge {
                                                     uuid: judge_req.uuid,
                                                     main_lang: main_lang.clone(),
                                                     checker_lang: checker_lang.clone(),
@@ -700,7 +695,7 @@ impl State {
                                     )
                                     .await
                                     .ok();
-                                    *self.locked.lock().await = false;
+                                    *self.locked.write().await = false;
                                 }
                             } else {
                                 error!(
@@ -756,16 +751,16 @@ pub async fn open_protocol() {
             let stream: Arc<TcpStream> = Arc::new(stream);
             let key = EphemeralSecret::random(thread_rng());
             let (send, mut recv): (Sender<Actions>, Receiver<Actions>) = unbounded();
-            let state = Arc::new(Mutex::new(State {
+            let state = Arc::new(State {
                 key: Arc::new(key),
-                locked: Mutex::new(false),
-                node_id: Mutex::new(std::u32::MAX),
-                shared: Arc::new(Mutex::new(None)),
-                signal: Arc::new(Mutex::new(send.clone())),
-                judge: Arc::new(Mutex::new(None)),
-            }));
+                locked: RwLock::new(false),
+                node_id: RwLock::new(std::u32::MAX),
+                shared: Arc::new(RwLock::new(None)),
+                signal: send.clone(),
+                judge: Arc::new(RwLock::new(None)),
+            });
             let handshake_req = HandshakeRequest {
-                client_pubkey: state.lock().await.key.public_key(),
+                client_pubkey: state.key.public_key(),
                 pass: MASTER_PASS.clone(),
             };
             // Send Handshake packet
@@ -803,11 +798,9 @@ pub async fn open_protocol() {
                 packet = Packet::from_stream(Arc::clone(&stream)).fuse() => match packet {
                     Ok(packet) => {
                         let stream_cloned = Arc::clone(&stream);
-                        let state_mutex = Arc::clone(&state);
+                        let state_arc = Arc::clone(&state);
                         spawn(async move {
-                            state_mutex
-                                .lock()
-                                .await
+                            state_arc
                                 .handle_command(Arc::clone(&stream_cloned), packet)
                                 .await
                         });

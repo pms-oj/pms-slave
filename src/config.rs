@@ -7,6 +7,11 @@ pub struct Host {
 }
 
 #[derive(Deserialize, Serialize, Debug)]
+pub struct Redis {
+    pub addr: String,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Config {
     pub host: Host,
 }
