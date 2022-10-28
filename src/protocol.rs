@@ -209,6 +209,7 @@ impl State {
                                             time_limit: (onjudge.time_limit as f64)
                                                 * CONVERT_TO_SECONDS,
                                             mem_limit: onjudge.mem_limit,
+                                            procs: onjudge.procs,
                                         };
                                         let res = run.run();
                                         debug!(
@@ -557,6 +558,7 @@ impl State {
                                                     time_limit: judge_req.time_limit,
                                                     mem_limit: judge_req.mem_limit,
                                                     tempdir: dir,
+                                                    procs: judge_req.procs,
                                                 });
                                                 self.update_judge(
                                                     Arc::clone(&stream),
@@ -677,6 +679,7 @@ impl State {
                                                     time_limit: judge_req.time_limit,
                                                     mem_limit: judge_req.mem_limit,
                                                     tempdir: dir,
+                                                    procs: 1,
                                                 });
                                                 self.update_judge(
                                                     Arc::clone(&stream),

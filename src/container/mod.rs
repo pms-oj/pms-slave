@@ -83,13 +83,14 @@ impl CheckerRun {
             "(Checker) stderr: {}",
             String::from_utf8(out.stderr).unwrap()
         );
-        debug!(
+        trace!(
             "(Checker) stdout: {}",
             String::from_utf8(out.stdout.clone()).unwrap()
         );
         let result_str = read_to_string(result_p).expect("Failed to read a result file");
         debug!("(Checker) {}: {}", RESULT_FILE_NAME, result_str.clone());
-        let result = toml::from_str::<ResultAppes>(&result_str).expect("Failed to parse a result file");
+        let result =
+            toml::from_str::<ResultAppes>(&result_str).expect("Failed to parse a result file");
         let meta = {
             let s = read_to_string(log_p).expect("Failed to read a log file");
             parse_meta(s).expect("Failed to parse a log file")
@@ -112,6 +113,7 @@ pub struct Runv2 {
     pub box_dir: TempDir,
     pub time_limit: f64,
     pub mem_limit: u64,
+    pub procs: usize,
 }
 
 impl Runv2 {
@@ -192,7 +194,7 @@ impl Runv2 {
                 "--cg-mem={}",
                 self.mem_limit + self.main_lang.add_mem_limit
             ))
-            .arg("-p 5")
+            .arg(&format!("-p {}", self.procs))
             .arg("-s")
             .arg(&format!("--stdin=/temp/{}", STDIN_FILE_NAME))
             .arg(&format!("--meta={}", log_p.clone().display(),))
@@ -203,7 +205,7 @@ impl Runv2 {
             .output()
             .expect("Failed to run isolate command");
         debug!("(Runv2) stderr: {}", String::from_utf8(out.stderr).unwrap());
-        debug!(
+        trace!(
             "(Runv2) stdout: {}",
             String::from_utf8(out.stdout.clone()).unwrap()
         );
@@ -292,7 +294,7 @@ impl Run {
             .output()
             .expect("Failed to run isolate command");
         debug!("(Run) stderr: {}", String::from_utf8(out.stderr).unwrap());
-        debug!("(Run) stdout: {}", String::from_utf8(out.stdout).unwrap());
+        trace!("(Run) stdout: {}", String::from_utf8(out.stdout).unwrap());
         let meta = {
             let s = read_to_string(log_p).expect("Some error occured");
             parse_meta(s).expect("Some error occured")

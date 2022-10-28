@@ -905,7 +905,7 @@ dependencies = [
 [[package]]
 name = "judge-protocol"
 version = "0.1.0"
-source = "git+https://github.com/polymath-cc/judge-protocol#aa2c6654d529d4319046235a7be22f6e8797d09e"
+source = "git+https://github.com/polymath-cc/judge-protocol#91b80f75b5bdaafff3dd15094b80b87510900123"
 dependencies = [
  "actix",
  "async-std",

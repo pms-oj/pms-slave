@@ -20,4 +20,5 @@ pub struct OnJudge {
     pub time_limit: u64, // in ms
     pub mem_limit: u64,  // in kb
     pub tempdir: TempDir,
+    pub procs: usize,
 }
