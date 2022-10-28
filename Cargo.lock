@@ -94,6 +94,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "983cd8b9d4b02a6dc6ffa557262eb5858a27a0038ffffe21a0f133eaa819a164"
 
 [[package]]
+name = "arrayref"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4c527152e37cf757a3f78aae5a06fbeefdb07ccc535c980a3208ee3060dd544"
+
+[[package]]
+name = "arrayvec"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8da52d66c7071e2e3fa2a1e5c6d088fec47b593032b254f5e980de8ea54454d6"
+
+[[package]]
 name = "async-attributes"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -273,6 +285,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
+name = "blake3"
+version = "1.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a08e53fc5a564bb15bfe6fae56bd71522205f1f91893f9c0116edad6496c183f"
+dependencies = [
+ "arrayref",
+ "arrayvec",
+ "cc",
+ "cfg-if",
+ "constant_time_eq",
+ "digest",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -420,6 +446,12 @@ name = "const-oid"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "722e23542a15cea1f65d4a1419c4cfd7a26706c70871a13a04238ca3f40f1661"
+
+[[package]]
+name = "constant_time_eq"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "245097e9a4535ee1e3e3931fcfcd55a796a44c643e8596ff6566d68f09b87bbc"
 
 [[package]]
 name = "core-foundation-sys"
@@ -905,19 +937,18 @@ dependencies = [
 [[package]]
 name = "judge-protocol"
 version = "0.1.0"
-source = "git+https://github.com/polymath-cc/judge-protocol#91b80f75b5bdaafff3dd15094b80b87510900123"
+source = "git+https://github.com/polymath-cc/judge-protocol#dce1614b5c7fbd9fdef9fe45374fa0d7f8085fad"
 dependencies = [
  "actix",
  "async-std",
  "bincode",
+ "blake3",
  "chacha20poly1305",
  "generic-array",
  "k256",
  "log",
- "md-5",
  "rand",
  "serde",
- "sha3",
  "static_assertions",
  "uuid",
 ]
@@ -934,12 +965,6 @@ dependencies = [
  "serdect",
  "sha2",
 ]
-
-[[package]]
-name = "keccak"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9b7d56ba4a8344d6be9729995e6b06f928af29998cdf79fe390cbf6b1fee838"
 
 [[package]]
 name = "kv-log-macro"
@@ -1028,15 +1053,6 @@ dependencies = [
  "thread-id",
  "typemap-ors",
  "winapi",
-]
-
-[[package]]
-name = "md-5"
-version = "0.10.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6365506850d44bff6e2fbcb5176cf63650e48bd45ef2fe2665ae1570e0f4b9ca"
-dependencies = [
- "digest",
 ]
 
 [[package]]
@@ -1186,6 +1202,7 @@ dependencies = [
  "async-std",
  "async-tar",
  "bincode",
+ "blake3",
  "futures",
  "generic-array",
  "judge-protocol",
@@ -1196,7 +1213,6 @@ dependencies = [
  "num_cpus",
  "rand",
  "serde",
- "sha3",
  "tempfile",
  "tinytemplate",
  "toml",
@@ -1416,16 +1432,6 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest",
-]
-
-[[package]]
-name = "sha3"
-version = "0.10.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdf0c33fae925bdc080598b84bc15c55e7b9a4a43b3c704da051f977469691c9"
-dependencies = [
- "digest",
- "keccak",
 ]
 
 [[package]]
